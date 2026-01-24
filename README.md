@@ -5,6 +5,7 @@ A centralized appointment scheduling system built in Go that integrates with mul
 ## 📋 Project Overview
 
 This is a standalone backend service that:
+
 - ✅ Owns appointments
 - ✅ Integrates with multiple products via APIs
 - ✅ Uses one shared database
@@ -12,7 +13,7 @@ This is a standalone backend service that:
 
 ## 🏗️ Architecture
 
-```
+```md
 [ Product A ] ─┐
 [ Product B ] ─┼──> Appointment API (Go)
 [ Product C ] ─┘         |
@@ -28,6 +29,7 @@ This is a standalone backend service that:
 ## 🎯 Recommended Approach
 
 **Start with the AaaS (Appointment as a Service) model:**
+
 - 40-50% faster MVP (4-6 weeks vs 8 weeks)
 - 60% lower infrastructure costs
 - Simpler architecture (no sync service)
@@ -38,6 +40,7 @@ This is a standalone backend service that:
 ## 🚀 Key Features (Planned)
 
 ### Phase 1 (MVP)
+
 - Product authentication
 - Create / list / cancel appointments
 - Metadata support
@@ -45,6 +48,7 @@ This is a standalone backend service that:
 - Dockerized Go service
 
 ### Phase 2
+
 - Availability management
 - Participants support
 - Webhooks
@@ -93,15 +97,15 @@ appointments
 
 ## 🏁 Getting Started
 
-*Coming soon - Implementation in progress*
+Coming soon - Implementation in progress
 
 ## 📝 License
 
-*To be determined*
+To be determined
 
 ## 👥 Contributing
 
-*Guidelines to be added*
+Guidelines to be added
 
 ---
 
