@@ -36,7 +36,7 @@ A microservice-based appointment management system designed to be integrated int
 │                                                   │
 │  ┌──────────────┐      ┌──────────────┐        │
 │  │ API Gateway   │──────│ Auth Layer   │        │
-│  │ (Express.js)  │      │ (JWT Token)  │        │
+│  │   (Go/Gin)    │      │ (JWT Token)  │        │
 │  └──────────────┘      └──────────────┘        │
 │          │                                       │
 │  ┌──────────────────────────────┐              │
@@ -61,31 +61,32 @@ A microservice-based appointment management system designed to be integrated int
 
 ### Backend
 
-- **Runtime**: Node.js (v18+)
-- **Framework**: Express.js
-- **Language**: TypeScript
-- **Validation**: Joi / Zod
-- **Documentation**: Swagger/OpenAPI
+- **Language**: Go (Golang) 1.21+
+- **Framework**: Gin / Fiber
+- **Router**: Chi (alternative)
+- **Validation**: go-playground/validator
+- **Documentation**: Swagger/OpenAPI (swag)
 
 ### Database
 
 - **Primary DB**: PostgreSQL 15+
-- **ORM**: Prisma / TypeORM
-- **Migrations**: Built-in ORM migrations
+- **Database Driver**: pgx (PostgreSQL driver)
+- **ORM/Query Builder**: GORM / sqlc
+- **Migrations**: golang-migrate / goose
 
 ### Security
 
-- **Authentication**: JWT (JSON Web Tokens)
-- **Encryption**: bcrypt for API keys
-- **Rate Limiting**: express-rate-limit
-- **CORS**: Configurable origins
+- **Authentication**: JWT (golang-jwt/jwt)
+- **Encryption**: bcrypt from crypto/bcrypt
+- **Rate Limiting**: golang.org/x/time/rate
+- **CORS**: gin-contrib/cors or rs/cors
 
 ### DevOps
 
 - **Containerization**: Docker + Docker Compose
-- **Environment**: dotenv
-- **Logging**: Winston / Pino
-- **Testing**: Jest + Supertest
+- **Environment**: godotenv / viper
+- **Logging**: zap / logrus
+- **Testing**: Go testing package + testify
 
 ---
 
@@ -488,60 +489,93 @@ RATE_LIMIT_MAX_REQUESTS=100
 
 ```md
 appointment-service/
-├── src/
-│   ├── config/
-│   ├── controllers/
+├── cmd/
+│   └── api/
+│       └── main.go
+├── internal/
+│   ├── handlers/
+│   │   ├── appointment.go
+│   │   └── product.go
 │   ├── middleware/
+│   │   ├── auth.go
+│   │   └── ratelimit.go
 │   ├── models/
-│   ├── routes/
-│   ├── services/
-│   ├── utils/
-│   └── index.ts
-├── prisma/
-│   ├── schema.prisma
-│   └── migrations/
+│   │   ├── appointment.go
+│   │   └── product.go
+│   ├── repository/
+│   │   ├── appointment_repo.go
+│   │   └── product_repo.go
+│   ├── service/
+│   │   ├── appointment_service.go
+│   │   └── product_service.go
+│   ├── config/
+│   │   └── config.go
+│   └── routes/
+│       └── routes.go
+├── pkg/
+│   ├── auth/
+│   ├── logger/
+│   └── validator/
+├── migrations/
+│   ├── 001_create_products.up.sql
+│   ├── 001_create_products.down.sql
+│   ├── 002_create_appointments.up.sql
+│   └── 002_create_appointments.down.sql
 ├── tests/
+│   ├── integration/
+│   └── unit/
 ├── docs/
+│   ├── swagger.yaml
 │   └── API_INTEGRATION_GUIDE.md
 ├── .env.example
 ├── .dockerignore
 ├── .gitignore
 ├── docker-compose.yml
 ├── Dockerfile
-├── package.json
-├── tsconfig.json
+├── go.mod
+├── go.sum
+├── Makefile
 └── README.md
 ```
 
 ### Dockerfile
 
 ```dockerfile
-FROM node:18-alpine AS builder
+# Build stage
+FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
 
-COPY package*.json ./
-COPY prisma ./prisma/
+# Install build dependencies
+RUN apk add --no-cache git ca-certificates tzdata
 
-RUN npm ci
+# Copy go mod files
+COPY go.mod go.sum ./
+RUN go mod download
 
+# Copy source code
 COPY . .
 
-RUN npm run build
-RUN npx prisma generate
+# Build the application
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main ./cmd/api
 
-FROM node:18-alpine
+# Final stage
+FROM alpine:latest
 
-WORKDIR /app
+RUN apk --no-cache add ca-certificates tzdata
 
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/package*.json ./
+WORKDIR /root/
 
-EXPOSE 3000
+# Copy the binary from builder
+COPY --from=builder /app/main .
+COPY --from=builder /app/migrations ./migrations
 
-CMD ["npm", "run", "start:migrate:prod"]
+# Copy .env if needed (or use environment variables)
+COPY .env.example .env
+
+EXPOSE 8080
+
+CMD ["./main"]
 ```
 
 ### docker-compose.yml
@@ -554,17 +588,24 @@ services:
     build: .
     container_name: appointment-service
     ports:
-      - "3000:3000"
+      - "8080:8080"
     environment:
-      NODE_ENV: production
-      DATABASE_URL: postgresql://appointments:password@db:5432/appointments
+      GO_ENV: production
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: appointments
+      DB_PASSWORD: password
+      DB_NAME: appointments
+      DB_SSL_MODE: disable
       JWT_SECRET: ${JWT_SECRET}
+      API_PORT: 8080
     depends_on:
       db:
         condition: service_healthy
     restart: unless-stopped
     networks:
       - appointment-network
+    command: ["/bin/sh", "-c", "sleep 5 && ./main"]
 
   db:
     image: postgres:15-alpine
@@ -575,6 +616,7 @@ services:
       POSTGRES_DB: appointments
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
     ports:
       - "5432:5432"
     healthcheck:
@@ -607,6 +649,18 @@ docker-compose down
 
 # Rebuild after changes
 docker-compose up -d --build
+
+# Run migrations manually
+docker-compose exec app ./main -migrate
+
+# Build locally (without Docker)
+make build
+
+# Run locally
+make run
+
+# Run tests
+make test
 ```
 
 ---
