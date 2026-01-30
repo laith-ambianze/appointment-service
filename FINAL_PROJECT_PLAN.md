@@ -6,6 +6,98 @@ A microservice-based appointment management system designed to be integrated int
 
 ---
 
+## 🚀 Quick Start Guide
+
+### Prerequisites
+
+- Go 1.21 or higher
+- Docker and Docker Compose
+- PostgreSQL 15+ (if running locally)
+- Make (optional, for convenience)
+
+### Setup Steps
+
+#### 1. Clone and Initialize
+
+```bash
+# Create project directory
+mkdir appointment-service
+cd appointment-service
+
+# Initialize Go module
+go mod init appointment-service
+
+# Install dependencies
+go get github.com/gin-gonic/gin
+go get github.com/jackc/pgx/v5
+go get github.com/golang-jwt/jwt/v5
+go get go.uber.org/zap
+go get github.com/google/uuid
+go get github.com/joho/godotenv
+```
+
+#### 2. Configure Environment
+
+```bash
+# Copy environment template
+cp .env.example .env
+
+# Edit .env with your settings
+nano .env
+```
+
+#### 3. Start with Docker
+
+```bash
+# Build and start all services
+docker-compose up -d
+
+# Check logs
+docker-compose logs -f app
+
+# Run migrations
+docker-compose exec app ./main -migrate
+```
+
+#### 4. Test the API
+
+```bash
+# Health check
+curl http://localhost:8080/health
+
+# Register a product
+curl -X POST http://localhost:8080/v1/products/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Test Product",
+    "description": "My test application"
+  }'
+```
+
+### Local Development (Without Docker)
+
+```bash
+# Install migration tool
+make install-migrate
+
+# Start PostgreSQL locally
+# (Assumes PostgreSQL is installed and running)
+
+# Run migrations
+make migrate-up
+
+# Build the application
+make build
+
+# Run the application
+make run
+
+# Or use hot reload (requires air)
+make dev
+```
+
+---
+
 ## 🎯 Core Objectives
 
 - **Multi-tenant Service**: Support multiple products/applications
@@ -471,14 +563,38 @@ Permanently delete an appointment (admin only).
 ### 3. Environment Variables
 
 ```env
-NODE_ENV=production
-PORT=3000
-DATABASE_URL=postgresql://user:pass@db:5432/appointments
-JWT_SECRET=your-secret-key
+# Application
+GO_ENV=production
+API_PORT=8080
+API_HOST=0.0.0.0
+
+# Database
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=appointments
+DB_PASSWORD=your-secure-password
+DB_NAME=appointments
+DB_SSL_MODE=require
+DB_MAX_CONNECTIONS=25
+DB_MAX_IDLE_CONNECTIONS=5
+DB_CONNECTION_MAX_LIFETIME=5m
+
+# Security
+JWT_SECRET=your-jwt-secret-key-min-32-chars
 API_SECRET_SALT_ROUNDS=10
-CORS_ORIGINS=https://product1.com,https://product2.com
-RATE_LIMIT_WINDOW_MS=60000
-RATE_LIMIT_MAX_REQUESTS=100
+
+# CORS
+CORS_ALLOWED_ORIGINS=https://product1.com,https://product2.com
+CORS_ALLOWED_METHODS=GET,POST,PUT,PATCH,DELETE
+CORS_ALLOWED_HEADERS=Content-Type,Authorization,X-API-Key,X-API-Secret
+
+# Rate Limiting
+RATE_LIMIT_REQUESTS_PER_MINUTE=100
+RATE_LIMIT_BURST=20
+
+# Logging
+LOG_LEVEL=info
+LOG_FORMAT=json
 ```
 
 ---
@@ -663,9 +779,479 @@ make run
 make test
 ```
 
+### Makefile
+
+```makefile
+.PHONY: build run test clean migrate-up migrate-down docker-build docker-up docker-down
+
+# Application name
+APP_NAME=appointment-service
+BUILD_DIR=bin
+
+# Go parameters
+GOCMD=go
+GOBUILD=$(GOCMD) build
+GOTEST=$(GOCMD) test
+GOGET=$(GOCMD) get
+GOMOD=$(GOCMD) mod
+BINARY_NAME=$(APP_NAME)
+
+# Database
+DB_URL=postgresql://appointments:password@localhost:5432/appointments?sslmode=disable
+
+all: test build
+
+## Build the application
+build:
+ @echo "Building..."
+ @mkdir -p $(BUILD_DIR)
+ $(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME) -v ./cmd/api
+
+## Run the application
+run: build
+ @echo "Running..."
+ @./$(BUILD_DIR)/$(BINARY_NAME)
+
+## Run tests
+test:
+ @echo "Running tests..."
+ $(GOTEST) -v -cover ./...
+
+## Run tests with coverage
+test-coverage:
+ @echo "Running tests with coverage..."
+ $(GOTEST) -v -coverprofile=coverage.out ./...
+ $(GOCMD) tool cover -html=coverage.out -o coverage.html
+ @echo "Coverage report generated: coverage.html"
+
+## Run linter
+lint:
+ @echo "Running linter..."
+ golangci-lint run
+
+## Format code
+fmt:
+ @echo "Formatting code..."
+ $(GOCMD) fmt ./...
+
+## Tidy dependencies
+tidy:
+ @echo "Tidying dependencies..."
+ $(GOMOD) tidy
+
+## Download dependencies
+deps:
+ @echo "Downloading dependencies..."
+ $(GOMOD) download
+
+## Clean build artifacts
+clean:
+ @echo "Cleaning..."
+ @rm -rf $(BUILD_DIR)
+ @rm -f coverage.out coverage.html
+
+## Run database migrations up
+migrate-up:
+ @echo "Running migrations up..."
+ migrate -path migrations -database "$(DB_URL)" up
+
+## Run database migrations down
+migrate-down:
+ @echo "Running migrations down..."
+ migrate -path migrations -database "$(DB_URL)" down
+
+## Create a new migration
+migrate-create:
+ @read -p "Enter migration name: " name; \
+ migrate create -ext sql -dir migrations -seq $$name
+
+## Install migration tool
+install-migrate:
+ @echo "Installing golang-migrate..."
+ go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
+## Docker build
+docker-build:
+ @echo "Building Docker image..."
+ docker build -t $(APP_NAME):latest .
+
+## Docker compose up
+docker-up:
+ @echo "Starting Docker containers..."
+ docker-compose up -d
+
+## Docker compose down
+docker-down:
+ @echo "Stopping Docker containers..."
+ docker-compose down
+
+## Docker compose logs
+docker-logs:
+ docker-compose logs -f app
+
+## Development mode with hot reload (requires air)
+dev:
+ @echo "Running in development mode..."
+ air
+
+## Install development tools
+install-tools:
+ @echo "Installing development tools..."
+ go install github.com/cosmtrek/air@latest
+ go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+ go install github.com/swaggo/swag/cmd/swag@latest
+
+## Generate Swagger documentation
+swagger:
+ @echo "Generating Swagger docs..."
+ swag init -g cmd/api/main.go -o docs
+
+## Help
+help:
+ @echo "Available targets:"
+ @echo "  make build           - Build the application"
+ @echo "  make run             - Run the application"
+ @echo "  make test            - Run tests"
+ @echo "  make test-coverage   - Run tests with coverage"
+ @echo "  make lint            - Run linter"
+ @echo "  make fmt             - Format code"
+ @echo "  make tidy            - Tidy dependencies"
+ @echo "  make clean           - Clean build artifacts"
+ @echo "  make migrate-up      - Run database migrations up"
+ @echo "  make migrate-down    - Run database migrations down"
+ @echo "  make migrate-create  - Create a new migration"
+ @echo "  make docker-build    - Build Docker image"
+ @echo "  make docker-up       - Start Docker containers"
+ @echo "  make docker-down     - Stop Docker containers"
+ @echo "  make dev             - Run in development mode with hot reload"
+ @echo "  make install-tools   - Install development tools"
+ @echo "  make swagger         - Generate Swagger documentation"
+```
+
 ---
 
-## 📚 Integration Documentation
+## � Sample Go Implementation
+
+### Main Application Entry (cmd/api/main.go)
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "net/http"
+    "os"
+    "os/signal"
+    "syscall"
+    "time"
+
+    "appointment-service/internal/config"
+    "appointment-service/internal/handlers"
+    "appointment-service/internal/middleware"
+    "appointment-service/internal/repository"
+    "appointment-service/internal/routes"
+    "appointment-service/internal/service"
+    "appointment-service/pkg/logger"
+
+    "github.com/gin-gonic/gin"
+    "github.com/jackc/pgx/v5/pgxpool"
+    "go.uber.org/zap"
+)
+
+func main() {
+    // Load configuration
+    cfg, err := config.Load()
+    if err != nil {
+        log.Fatal(\"Failed to load config:\", err)
+    }
+
+    // Initialize logger
+    zapLogger, err := logger.NewLogger(cfg.Environment)
+    if err != nil {
+        log.Fatal(\"Failed to initialize logger:\", err)
+    }
+    defer zapLogger.Sync()
+
+    // Connect to database
+    dbPool, err := connectDB(cfg.DatabaseURL)
+    if err != nil {
+        zapLogger.Fatal(\"Failed to connect to database\", zap.Error(err))
+    }
+    defer dbPool.Close()
+
+    zapLogger.Info(\"Database connection established\")
+
+    // Initialize repositories
+    productRepo := repository.NewProductRepository(dbPool)
+    appointmentRepo := repository.NewAppointmentRepository(dbPool)
+
+    // Initialize services
+    productSvc := service.NewProductService(productRepo)
+    appointmentSvc := service.NewAppointmentService(appointmentRepo, productRepo)
+
+    // Initialize handlers
+    productHandler := handlers.NewProductHandler(productSvc)
+    appointmentHandler := handlers.NewAppointmentHandler(appointmentSvc)
+
+    // Setup router
+    router := setupRouter(cfg, zapLogger, productHandler, appointmentHandler)
+
+    // Start server
+    srv := &http.Server{
+        Addr:         fmt.Sprintf(\"%s:%s\", cfg.Host, cfg.Port),
+        Handler:      router,
+        ReadTimeout:  15 * time.Second,
+        WriteTimeout: 15 * time.Second,
+        IdleTimeout:  60 * time.Second,
+    }
+
+    // Graceful shutdown
+    go func() {
+        zapLogger.Info(\"Starting server\", zap.String(\"address\", srv.Addr))
+        if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+            zapLogger.Fatal(\"Server failed to start\", zap.Error(err))
+        }
+    }()
+
+    // Wait for interrupt signal
+    quit := make(chan os.Signal, 1)
+    signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+    <-quit
+
+    zapLogger.Info(\"Shutting down server...\")
+
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+
+    if err := srv.Shutdown(ctx); err != nil {
+        zapLogger.Fatal(\"Server forced to shutdown\", zap.Error(err))
+    }
+
+    zapLogger.Info(\"Server exited\")
+}
+
+func connectDB(url string) (*pgxpool.Pool, error) {
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+
+    pool, err := pgxpool.New(ctx, url)
+    if err != nil {
+        return nil, err
+    }
+
+    if err := pool.Ping(ctx); err != nil {
+        return nil, err
+    }
+
+    return pool, nil
+}
+
+func setupRouter(cfg *config.Config, logger *zap.Logger, productHandler *handlers.ProductHandler, appointmentHandler *handlers.AppointmentHandler) *gin.Engine {
+    if cfg.Environment == \"production\" {
+        gin.SetMode(gin.ReleaseMode)
+    }
+
+    router := gin.New()
+    router.Use(gin.Recovery())
+    router.Use(middleware.Logger(logger))
+    router.Use(middleware.CORS(cfg.CORSOrigins))
+
+    // Health check
+    router.GET(\"/health\", func(c *gin.Context) {
+        c.JSON(http.StatusOK, gin.H{\"status\": \"healthy\"})
+    })
+
+    // API v1 routes
+    v1 := router.Group(\"/v1\")
+    {
+        routes.RegisterProductRoutes(v1, productHandler)
+        routes.RegisterAppointmentRoutes(v1, appointmentHandler, middleware.AuthMiddleware(cfg))
+    }
+
+    return router
+}
+```
+
+### Authentication Middleware (internal/middleware/auth.go)
+
+```go
+package middleware
+
+import (
+    \"crypto/subtle\"
+    \"net/http\"
+
+    \"appointment-service/internal/config\"
+    \"github.com/gin-gonic/gin\"
+)
+
+func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
+    return func(c *gin.Context) {
+        apiKey := c.GetHeader(\"X-API-Key\")
+        apiSecret := c.GetHeader(\"X-API-Secret\")
+
+        if apiKey == \"\" || apiSecret == \"\" {
+            c.JSON(http.StatusUnauthorized, gin.H{
+                \"error\": \"Missing authentication credentials\",
+            })
+            c.Abort()
+            return
+        }
+
+        // Validate credentials (simplified - should check database)
+        // In production, look up product by API key and verify secret hash
+        if !isValidCredentials(apiKey, apiSecret) {
+            c.JSON(http.StatusUnauthorized, gin.H{
+                \"error\": \"Invalid credentials\",
+            })
+            c.Abort()
+            return
+        }
+
+        // Store product ID in context for use in handlers
+        c.Set(\"product_id\", extractProductID(apiKey))
+        c.Next()
+    }
+}
+
+func isValidCredentials(apiKey, apiSecret string) bool {
+    // This should query the database and verify bcrypt hash
+    // Simplified for example
+    return subtle.ConstantTimeCompare([]byte(apiKey), []byte(\"test-key\")) == 1
+}
+
+func extractProductID(apiKey string) string {
+    // Extract product ID from API key
+    return \"product-id\"
+}
+```
+
+### Appointment Handler (internal/handlers/appointment.go)
+
+```go
+package handlers
+
+import (
+    \"net/http\"
+    \"time\"
+
+    \"appointment-service/internal/models\"
+    \"appointment-service/internal/service\"
+    \"github.com/gin-gonic/gin\"
+    \"github.com/google/uuid\"
+)
+
+type AppointmentHandler struct {
+    service *service.AppointmentService
+}
+
+func NewAppointmentHandler(service *service.AppointmentService) *AppointmentHandler {
+    return &AppointmentHandler{service: service}
+}
+
+type CreateAppointmentRequest struct {
+    User1           UserMetadata `json:\"user1\" binding:\"required\"`
+    User2           UserMetadata `json:\"user2\" binding:\"required\"`
+    Title           string       `json:\"title\" binding:\"required,min=3,max=500\"`
+    Description     string       `json:\"description\"`
+    StartTime       time.Time    `json:\"startTime\" binding:\"required\"`
+    EndTime         time.Time    `json:\"endTime\" binding:\"required\"`
+    Location        string       `json:\"location\"`
+    MeetingType     string       `json:\"meetingType\" binding:\"omitempty,oneof=online in-person phone\"`
+    AdditionalData  interface{}  `json:\"additionalMetadata\"`
+}
+
+type UserMetadata struct {
+    UserID       string            `json:\"userId\" binding:\"required\"`
+    FirstName    string            `json:\"firstName\" binding:\"required\"`
+    LastName     string            `json:\"lastName\" binding:\"required\"`
+    Email        string            `json:\"email\" binding:\"omitempty,email\"`
+    Phone        string            `json:\"phone\"`
+    CustomFields map[string]string `json:\"customFields\"`
+}
+
+func (h *AppointmentHandler) Create(c *gin.Context) {
+    var req CreateAppointmentRequest
+    if err := c.ShouldBindJSON(&req); err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{
+            \"success\": false,
+            \"error\":   err.Error(),
+        })
+        return
+    }
+
+    // Validate time range
+    if !req.EndTime.After(req.StartTime) {
+        c.JSON(http.StatusBadRequest, gin.H{
+            \"success\": false,
+            \"error\":   \"End time must be after start time\",
+        })
+        return
+    }
+
+    productID := c.GetString(\"product_id\")
+
+    appointment := &models.Appointment{
+        ID:              uuid.New(),
+        ProductID:       uuid.MustParse(productID),
+        User1ID:         req.User1.UserID,
+        User1Metadata:   req.User1,
+        User2ID:         req.User2.UserID,
+        User2Metadata:   req.User2,
+        Title:           req.Title,
+        Description:     req.Description,
+        StartTime:       req.StartTime,
+        EndTime:         req.EndTime,
+        Location:        req.Location,
+        MeetingType:     req.MeetingType,
+        Status:          \"pending\",
+        AdditionalData:  req.AdditionalData,
+    }
+
+    if err := h.service.CreateAppointment(c.Request.Context(), appointment); err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{
+            \"success\": false,
+            \"error\":   \"Failed to create appointment\",
+        })
+        return
+    }
+
+    c.JSON(http.StatusCreated, gin.H{
+        \"success\": true,
+        \"data\": gin.H{
+            \"appointmentId\": appointment.ID,
+            \"status\":        appointment.Status,
+            \"createdAt\":     appointment.CreatedAt,
+        },
+    })
+}
+
+func (h *AppointmentHandler) GetAll(c *gin.Context) {
+    productID := c.GetString(\"product_id\")
+    
+    appointments, err := h.service.GetAppointmentsByProduct(c.Request.Context(), productID)
+    if err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{
+            \"success\": false,
+            \"error\":   \"Failed to fetch appointments\",
+        })
+        return
+    }
+
+    c.JSON(http.StatusOK, gin.H{
+        \"success\": true,
+        \"data\": gin.H{
+            \"appointments\": appointments,
+        },
+    })
+}
+```
+
+---
+
+## �📚 Integration Documentation
 
 ### For Backend Developers (Client Products)
 
@@ -685,14 +1271,175 @@ curl -X POST https://api.appointment-service.com/v1/products/register \
 
 #### Step 2: Store Credentials
 
-```javascript
-// Backend environment variables
+```bash
+# Backend environment variables (.env)
 APPOINTMENT_SERVICE_URL=https://api.appointment-service.com/v1
 APPOINTMENT_API_KEY=prod_xxxxxxxxxxxxx
 APPOINTMENT_API_SECRET=secret_xxxxxxxxxxxxx
 ```
 
-#### Step 3: Create Appointment Helper (Node.js Example)
+#### Step 3: Create Appointment Helper
+
+**Go Example:**
+
+```go
+package appointment
+
+import (
+    "bytes"
+    "encoding/json"
+    "fmt"
+    "io"
+    "net/http"
+    "os"
+    "time"
+)
+
+type AppointmentClient struct {
+    BaseURL   string
+    APIKey    string
+    APISecret string
+    HTTPClient *http.Client
+}
+
+func NewClient() *AppointmentClient {
+    return &AppointmentClient{
+        BaseURL:   os.Getenv("APPOINTMENT_SERVICE_URL"),
+        APIKey:    os.Getenv("APPOINTMENT_API_KEY"),
+        APISecret: os.Getenv("APPOINTMENT_API_SECRET"),
+        HTTPClient: &http.Client{
+            Timeout: 10 * time.Second,
+        },
+    }
+}
+
+type CreateAppointmentRequest struct {
+    User1 UserMetadata `json:"user1"`
+    User2 UserMetadata `json:"user2"`
+    Title string `json:"title"`
+    Description string `json:"description"`
+    StartTime time.Time `json:"startTime"`
+    EndTime time.Time `json:"endTime"`
+    Location string `json:"location"`
+    MeetingType string `json:"meetingType"`
+}
+
+type UserMetadata struct {
+    UserID string `json:"userId"`
+    FirstName string `json:"firstName"`
+    LastName string `json:"lastName"`
+    Email string `json:"email"`
+    Phone string `json:"phone"`
+}
+
+type AppointmentResponse struct {
+    Success bool `json:"success"`
+    Data map[string]interface{} `json:"data"`
+}
+
+func (c *AppointmentClient) CreateAppointment(req CreateAppointmentRequest) (*AppointmentResponse, error) {
+    jsonData, err := json.Marshal(req)
+    if err != nil {
+        return nil, fmt.Errorf("failed to marshal request: %w", err)
+    }
+
+    httpReq, err := http.NewRequest("POST", c.BaseURL+"/appointments", bytes.NewBuffer(jsonData))
+    if err != nil {
+        return nil, fmt.Errorf("failed to create request: %w", err)
+    }
+
+    httpReq.Header.Set("Content-Type", "application/json")
+    httpReq.Header.Set("X-API-Key", c.APIKey)
+    httpReq.Header.Set("X-API-Secret", c.APISecret)
+
+    resp, err := c.HTTPClient.Do(httpReq)
+    if err != nil {
+        return nil, fmt.Errorf("request failed: %w", err)
+    }
+    defer resp.Body.Close()
+
+    body, err := io.ReadAll(resp.Body)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read response: %w", err)
+    }
+
+    if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+        return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(body))
+    }
+
+    var result AppointmentResponse
+    if err := json.Unmarshal(body, &result); err != nil {
+        return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+    }
+
+    return &result, nil
+}
+
+func (c *AppointmentClient) GetUserAppointments(userID string) (*AppointmentResponse, error) {
+    url := fmt.Sprintf("%s/appointments/user/%s", c.BaseURL, userID)
+    httpReq, err := http.NewRequest("GET", url, nil)
+    if err != nil {
+        return nil, fmt.Errorf("failed to create request: %w", err)
+    }
+
+    httpReq.Header.Set("X-API-Key", c.APIKey)
+    httpReq.Header.Set("X-API-Secret", c.APISecret)
+
+    resp, err := c.HTTPClient.Do(httpReq)
+    if err != nil {
+        return nil, fmt.Errorf("request failed: %w", err)
+    }
+    defer resp.Body.Close()
+
+    body, err := io.ReadAll(resp.Body)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read response: %w", err)
+    }
+
+    var result AppointmentResponse
+    if err := json.Unmarshal(body, &result); err != nil {
+        return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+    }
+
+    return &result, nil
+}
+
+func (c *AppointmentClient) CancelAppointment(appointmentID, userID, reason string) (*AppointmentResponse, error) {
+    url := fmt.Sprintf("%s/appointments/%s/cancel", c.BaseURL, appointmentID)
+    cancelReq := map[string]string{
+        "cancelledBy": userID,
+        "reason": reason,
+    }
+    jsonData, _ := json.Marshal(cancelReq)
+
+    httpReq, err := http.NewRequest("PATCH", url, bytes.NewBuffer(jsonData))
+    if err != nil {
+        return nil, fmt.Errorf("failed to create request: %w", err)
+    }
+
+    httpReq.Header.Set("Content-Type", "application/json")
+    httpReq.Header.Set("X-API-Key", c.APIKey)
+    httpReq.Header.Set("X-API-Secret", c.APISecret)
+
+    resp, err := c.HTTPClient.Do(httpReq)
+    if err != nil {
+        return nil, fmt.Errorf("request failed: %w", err)
+    }
+    defer resp.Body.Close()
+
+    body, err := io.ReadAll(resp.Body)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read response: %w", err)
+    }
+
+    var result AppointmentResponse
+    if err := json.Unmarshal(body, &result); err != nil {
+        return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+    }
+
+    return &result, nil
+}
+```
 
 ```javascript
 const axios = require('axios');
@@ -770,6 +1517,97 @@ module.exports = new AppointmentService();
 ```
 
 #### Step 4: Usage in Your Backend
+
+**Go Example:**
+
+```go
+package handlers
+
+import (
+    "encoding/json"
+    "net/http"
+    "time"
+    "yourapp/appointment"
+    "yourapp/models"
+)
+
+type AppointmentHandler struct {
+    appointmentClient *appointment.AppointmentClient
+    userRepo *models.UserRepository
+}
+
+func NewAppointmentHandler(client *appointment.AppointmentClient, userRepo *models.UserRepository) *AppointmentHandler {
+    return &AppointmentHandler{
+        appointmentClient: client,
+        userRepo: userRepo,
+    }
+}
+
+type ScheduleMeetingRequest struct {
+    User1ID   string    `json:"user1Id"`
+    User2ID   string    `json:"user2Id"`
+    Title     string    `json:"title"`
+    StartTime time.Time `json:"startTime"`
+    EndTime   time.Time `json:"endTime"`
+}
+
+func (h *AppointmentHandler) ScheduleMeeting(w http.ResponseWriter, r *http.Request) {
+    var req ScheduleMeetingRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        http.Error(w, err.Error(), http.StatusBadRequest)
+        return
+    }
+
+    // Fetch user details from your database
+    user1, err := h.userRepo.GetByID(req.User1ID)
+    if err != nil {
+        http.Error(w, "User 1 not found", http.StatusNotFound)
+        return
+    }
+
+    user2, err := h.userRepo.GetByID(req.User2ID)
+    if err != nil {
+        http.Error(w, "User 2 not found", http.StatusNotFound)
+        return
+    }
+
+    // Create appointment
+    appointmentReq := appointment.CreateAppointmentRequest{
+        User1: appointment.UserMetadata{
+            UserID:    user1.ID,
+            FirstName: user1.FirstName,
+            LastName:  user1.LastName,
+            Email:     user1.Email,
+            Phone:     user1.Phone,
+        },
+        User2: appointment.UserMetadata{
+            UserID:    user2.ID,
+            FirstName: user2.FirstName,
+            LastName:  user2.LastName,
+            Email:     user2.Email,
+            Phone:     user2.Phone,
+        },
+        Title:       req.Title,
+        StartTime:   req.StartTime,
+        EndTime:     req.EndTime,
+        MeetingType: "online",
+    }
+
+    result, err := h.appointmentClient.CreateAppointment(appointmentReq)
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
+
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "success": true,
+        "appointment": result,
+    })
+}
+```
+
+**Node.js Example:**
 
 ```javascript
 // In your route handler
@@ -865,6 +1703,52 @@ app.post('/api/schedule-meeting', async (req, res) => {
 
 ### Unit Tests
 
+**Go Testing Example:**
+
+```go
+package service
+
+import (
+    "testing"
+    "time"
+    "github.com/stretchr/testify/assert"
+    "github.com/stretchr/testify/mock"
+)
+
+func TestCreateAppointment(t *testing.T) {
+    // Arrange
+    mockRepo := new(MockAppointmentRepository)
+    service := NewAppointmentService(mockRepo)
+    
+    appointment := &Appointment{
+        ProductID: "prod-123",
+        User1ID: "user-1",
+        User2ID: "user-2",
+        Title: "Test Meeting",
+        StartTime: time.Now(),
+        EndTime: time.Now().Add(time.Hour),
+    }
+    
+    mockRepo.On("Create", mock.Anything).Return(nil)
+    
+    // Act
+    err := service.CreateAppointment(appointment)
+    
+    // Assert
+    assert.NoError(t, err)
+    mockRepo.AssertExpectations(t)
+}
+```
+
+**Run tests:**
+
+```bash
+go test ./... -v
+go test ./... -cover
+go test ./... -coverprofile=coverage.out
+go tool cover -html=coverage.out
+```
+
 - Service layer logic
 - Validation functions
 - Utility functions
@@ -872,12 +1756,62 @@ app.post('/api/schedule-meeting', async (req, res) => {
 
 ### Integration Tests
 
+**Go Integration Test Example:**
+
+```go
+package integration
+
+import (
+    "bytes"
+    "encoding/json"
+    "net/http"
+    "net/http/httptest"
+    "testing"
+    "github.com/stretchr/testify/assert"
+)
+
+func TestCreateAppointmentEndpoint(t *testing.T) {
+    // Setup test database and router
+    router := setupTestRouter()
+    
+    payload := map[string]interface{}{
+        "user1": map[string]string{
+            "userId": "user-1",
+            "firstName": "John",
+            "lastName": "Doe",
+        },
+        "title": "Test Meeting",
+    }
+    
+    jsonData, _ := json.Marshal(payload)
+    req := httptest.NewRequest("POST", "/v1/appointments", bytes.NewBuffer(jsonData))
+    req.Header.Set("Content-Type", "application/json")
+    req.Header.Set("X-API-Key", "test-key")
+    req.Header.Set("X-API-Secret", "test-secret")
+    
+    w := httptest.NewRecorder()
+    router.ServeHTTP(w, req)
+    
+    assert.Equal(t, http.StatusCreated, w.Code)
+}
+```
+
 - API endpoint testing
 - Database operations
 - Authentication flow
 - Error handling
 
 ### Load Tests
+
+**Using vegeta (Go load testing tool):**
+
+```bash
+# Install vegeta
+go install github.com/tsenart/vegeta@latest
+
+# Run load test
+echo "GET http://localhost:8080/v1/appointments" | vegeta attack -duration=30s -rate=100 | vegeta report
+```
 
 - Concurrent requests handling
 - Database connection pooling
@@ -889,31 +1823,79 @@ app.post('/api/schedule-meeting', async (req, res) => {
 
 ### Logging Levels
 
-```javascript
-// Winston configuration
-{
-    error: Errors that need immediate attention
-    warn: Warning messages
-    info: General information (API calls, etc.)
-    debug: Detailed debugging information
+**Go Zap Logger Configuration:**
+
+```go
+package logger
+
+import (
+    "go.uber.org/zap"
+    "go.uber.org/zap"
+)
+
+func NewLogger(env string) (*zap.Logger, error) {
+    if env == "production" {
+        return zap.NewProduction()
+    }
+    return zap.NewDevelopment()
 }
+
+// Usage:
+// logger.Info("API request", zap.String("method", "POST"), zap.String("path", "/appointments"))
+// logger.Error("Database error", zap.Error(err))
+// logger.Warn("Rate limit approaching", zap.Int("requests", 95))
+// logger.Debug("Request details", zap.Any("payload", data))
 ```
+
+**Log Levels:**
+
+- `error`: Errors that need immediate attention
+- `warn`: Warning messages
+- `info`: General information (API calls, etc.)
+- `debug`: Detailed debugging information
 
 ### Metrics to Track
 
+**Prometheus Metrics Example:**
+
+```go
+var (
+    httpRequestsTotal = prometheus.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "http_requests_total",
+            Help: "Total number of HTTP requests",
+        },
+        []string{"method", "endpoint", "status"},
+    )
+    
+    httpRequestDuration = prometheus.NewHistogramVec(
+        prometheus.HistogramOpts{
+            Name: "http_request_duration_seconds",
+            Help: "HTTP request duration in seconds",
+        },
+        []string{"method", "endpoint"},
+    )
+)
+```
+
+**Key Metrics:**
+
 - Request count per endpoint
-- Response times
+- Response times (p50, p95, p99)
 - Error rates
 - Active products
 - Total appointments
 - Database query performance
+- Goroutine count
+- Memory usage
 
 ### Recommended Tools
 
-- **Logging**: Winston + Elasticsearch + Kibana
+- **Logging**: Zap / Logrus + Elasticsearch + Kibana
 - **Monitoring**: Prometheus + Grafana
 - **Error Tracking**: Sentry
 - **APM**: New Relic / Datadog
+- **Tracing**: Jaeger / OpenTelemetry
 
 ---
 
@@ -975,30 +1957,53 @@ app.post('/api/schedule-meeting', async (req, res) => {
 
 ### Availability Management System
 
-```javascript
-// User availability settings
-{
-    userId: "user_123",
-    productId: "prod_456",
-    timezone: "America/New_York",
-    workingHours: {
-        monday: [{ start: "09:00", end: "17:00" }],
-        tuesday: [{ start: "09:00", end: "17:00" }],
-        wednesday: [{ start: "09:00", end: "17:00" }],
-        thursday: [{ start: "09:00", end: "17:00" }],
-        friday: [{ start: "09:00", end: "17:00" }],
-        saturday: [],
-        sunday: []
+**Go Struct Example:**
+
+```go
+type UserAvailability struct {
+    UserID        string              `json:"userId"`
+    ProductID     string              `json:"productId"`
+    Timezone      string              `json:"timezone"`
+    WorkingHours  map[string][]TimeSlot `json:"workingHours"`
+    BlockedSlots  []BlockedSlot       `json:"blockedSlots"`
+    MinimumNotice int                 `json:"minimumNotice"` // hours
+    BufferTime    int                 `json:"bufferTime"`    // minutes
+}
+
+type TimeSlot struct {
+    Start string `json:"start"` // "09:00"
+    End   string `json:"end"`   // "17:00"
+}
+
+type BlockedSlot struct {
+    Start  time.Time `json:"start"`
+    End    time.Time `json:"end"`
+    Reason string    `json:"reason"`
+}
+
+// Example usage
+availability := UserAvailability{
+    UserID:    "user_123",
+    ProductID: "prod_456",
+    Timezone:  "America/New_York",
+    WorkingHours: map[string][]TimeSlot{
+        "monday":    {{Start: "09:00", End: "17:00"}},
+        "tuesday":   {{Start: "09:00", End: "17:00"}},
+        "wednesday": {{Start: "09:00", End: "17:00"}},
+        "thursday":  {{Start: "09:00", End: "17:00"}},
+        "friday":    {{Start: "09:00", End: "17:00"}},
+        "saturday":  {},
+        "sunday":    {},
     },
-    blockedSlots: [
+    BlockedSlots: []BlockedSlot{
         {
-            start: "2026-02-15T12:00:00Z",
-            end: "2026-02-15T13:00:00Z",
-            reason: "Lunch break"
-        }
-    ],
-    minimumNotice: 24, // hours
-    bufferTime: 15 // minutes between appointments
+            Start:  time.Date(2026, 2, 15, 12, 0, 0, 0, time.UTC),
+            End:    time.Date(2026, 2, 15, 13, 0, 0, 0, time.UTC),
+            Reason: "Lunch break",
+        },
+    },
+    MinimumNotice: 24,
+    BufferTime:    15,
 }
 ```
 
@@ -1078,6 +2083,70 @@ app.post('/api/schedule-meeting', async (req, res) => {
 4. **Multi-region**: Consider CDN and multiple database regions for global users
 5. **Versioning**: Use API versioning (v1, v2) for backward compatibility
 6. **Migration**: Provide data export functionality for products
+7. **Go Best Practices**:
+   - Use context for request cancellation and timeouts
+   - Implement proper error handling with wrapped errors
+   - Use goroutines wisely with proper synchronization
+   - Keep dependencies minimal and well-maintained
+
+---
+
+## 📚 Go Resources & Libraries
+
+### Essential Go Packages
+
+```bash
+# Web Framework
+go get github.com/gin-gonic/gin
+# Alternative: go get github.com/gofiber/fiber/v2
+
+# Database
+go get github.com/jackc/pgx/v5
+go get github.com/jackc/pgx/v5/pgxpool
+
+# Configuration
+go get github.com/joho/godotenv
+go get github.com/spf13/viper
+
+# Logging
+go get go.uber.org/zap
+# Alternative: go get github.com/sirupsen/logrus
+
+# Authentication
+go get github.com/golang-jwt/jwt/v5
+
+# Validation
+go get github.com/go-playground/validator/v10
+
+# Testing
+go get github.com/stretchr/testify
+
+# Migrations
+go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
+# API Documentation
+go get github.com/swaggo/swag/cmd/swag
+go get github.com/swaggo/gin-swagger
+go get github.com/swaggo/files
+
+# UUID
+go get github.com/google/uuid
+
+# CORS
+go get github.com/gin-contrib/cors
+
+# Rate Limiting
+go get golang.org/x/time/rate
+```
+
+### Recommended Learning Resources
+
+- **Official Go Documentation**: <https://go.dev/doc/>
+- **Effective Go**: <https://go.dev/doc/effective_go>
+- **Go by Example**: <https://gobyexample.com/>
+- **Gin Framework**: <https://gin-gonic.com/docs/>
+- **PostgreSQL Driver (pgx)**: <https://github.com/jackc/pgx>
+- **Go Database Patterns**: <https://go.dev/doc/database/>
 
 ---
 
@@ -1086,10 +2155,13 @@ app.post('/api/schedule-meeting', async (req, res) => {
 - **Project Repository**: <https://github.com/laith-ambianze/appointment-service>
 - **Documentation**: <https://docs.appointment-service.com>
 - **API Status**: <https://status.appointment-service.com>
+- **Go Community**: <https://go.dev/help>
+- **Gin Framework Docs**: <https://gin-gonic.com/docs/>
 
 ---
 
-**Document Version**: 1.0  
+**Document Version**: 2.0  
 **Last Updated**: January 30, 2026  
 **Author**: Project Planning Team  
+**Technology Stack**: Go (Golang) 1.21+  
 **Status**: Final - Ready for Implementation
