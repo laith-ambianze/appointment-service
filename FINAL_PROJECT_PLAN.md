@@ -4,6 +4,24 @@
 
 A microservice-based appointment management system designed to be integrated into multiple products, allowing users from different platforms to schedule and manage appointments with each other.
 
+### 🎯 What This Service Does
+
+- **External User Management**: Your application manages users; this service only stores external user IDs and metadata
+- **Flexible Participants**: Supports 1-on-1 meetings AND group appointments (3+ participants)
+- **Multi-Tenant**: Multiple products can use the same service with isolated data
+- **Production-Ready**: Dockerized, scalable, with proper authentication
+
+### 📐 Core Design Pattern
+
+**Flexible Participants Architecture:**
+
+- Each appointment has a `created_by` field (who initiated it)
+- Participants are tracked in a separate `appointment_participants` table
+- Each participant has a `role` (host, guest, attendee, observer)
+- Supports expanding from 1-on-1 to group meetings without schema changes
+
+**See [DESIGN_DECISION_PARTICIPANTS.md](DESIGN_DECISION_PARTICIPANTS.md) for detailed explanation.**
+
 ---
 
 ## 🚀 Quick Start Guide
@@ -213,13 +231,8 @@ CREATE TABLE appointments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     product_id UUID NOT NULL REFERENCES products(id),
     
-    -- User 1 (Initiator)
-    user1_id VARCHAR(255) NOT NULL,
-    user1_metadata JSONB NOT NULL,
-    
-    -- User 2 (Recipient)
-    user2_id VARCHAR(255) NOT NULL,
-    user2_metadata JSONB NOT NULL,
+    -- Creator/Host of the appointment
+    created_by VARCHAR(255) NOT NULL,
     
     -- Appointment Details
     title VARCHAR(500) NOT NULL,
@@ -236,24 +249,69 @@ CREATE TABLE appointments (
     cancelled_at TIMESTAMP,
     
     -- Additional Data
-    additional_metadata JSONB,
+    metadata JSONB,
     
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
-    CONSTRAINT valid_time_range CHECK (end_time > start_time)
+    CONSTRAINT valid_time_range CHECK (end_time > start_time),
+    CONSTRAINT valid_status CHECK (status IN ('pending', 'confirmed', 'cancelled', 'completed'))
 );
 
 CREATE INDEX idx_appointments_product ON appointments(product_id);
-CREATE INDEX idx_appointments_user1 ON appointments(user1_id);
-CREATE INDEX idx_appointments_user2 ON appointments(user2_id);
+CREATE INDEX idx_appointments_created_by ON appointments(created_by);
 CREATE INDEX idx_appointments_status ON appointments(status);
-CREATE INDEX idx_appointments_time ON appointments(start_time, end_time);
+CREATE INDEX idx_appointments_start_time ON appointments(start_time);
+CREATE INDEX idx_appointments_end_time ON appointments(end_time);
+CREATE INDEX idx_appointments_time_range ON appointments(start_time, end_time);
+CREATE INDEX idx_appointments_product_creator ON appointments(product_id, created_by);
 ```
 
-#### 3. **user_metadata_schema**
+#### 3. **appointment_participants**
 
-User metadata structure (stored as JSONB):
+Tracks all participants in an appointment (host and guests).
+
+```sql
+CREATE TABLE appointment_participants (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    appointment_id UUID NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
+    
+    -- External user reference (from client product)
+    external_user_id VARCHAR(255) NOT NULL,
+    
+    -- Participant role
+    role VARCHAR(50) NOT NULL, -- 'host', 'guest', 'attendee', 'observer'
+    
+    -- User metadata from client product
+    user_metadata JSONB NOT NULL,
+    
+    -- Participant status
+    status VARCHAR(50) DEFAULT 'pending', -- 'pending', 'accepted', 'declined'
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    CONSTRAINT valid_role CHECK (role IN ('host', 'guest', 'attendee', 'observer')),
+    CONSTRAINT valid_participant_status CHECK (status IN ('pending', 'accepted', 'declined')),
+    CONSTRAINT unique_participant UNIQUE (appointment_id, external_user_id)
+);
+
+CREATE INDEX idx_participants_appointment ON appointment_participants(appointment_id);
+CREATE INDEX idx_participants_external_user ON appointment_participants(external_user_id);
+CREATE INDEX idx_participants_role ON appointment_participants(role);
+CREATE INDEX idx_participants_status ON appointment_participants(status);
+```
+
+**How it works:**
+
+- Each appointment has multiple participants (minimum 2: host + guest)
+- The `created_by` field in appointments table identifies the creator
+- Participants table tracks all users involved with their roles
+- Supports 1-on-1 meetings (2 participants) and group meetings (3+ participants)
+
+#### 4. **user_metadata_schema**
+
+User metadata structure (stored as JSONB in participants table):
 
 ```json
 {
@@ -269,7 +327,7 @@ User metadata structure (stored as JSONB):
 }
 ```
 
-#### 4. **appointment_history** (Audit Trail)
+#### 5. **appointment_history** (Audit Trail)
 
 Track all changes to appointments.
 
@@ -366,29 +424,35 @@ Create a new appointment.
 
 ```json
 {
-    "user1": {
-        "userId": "user_123",
-        "firstName": "John",
-        "lastName": "Doe",
-        "email": "john@example.com",
-        "phone": "+1234567890",
-        "customFields": {}
-    },
-    "user2": {
-        "userId": "user_456",
-        "firstName": "Jane",
-        "lastName": "Smith",
-        "email": "jane@example.com",
-        "phone": "+0987654321",
-        "customFields": {}
-    },
     "title": "Business Meeting",
     "description": "Discuss Q1 goals",
     "startTime": "2026-02-15T10:00:00Z",
     "endTime": "2026-02-15T11:00:00Z",
     "location": "Conference Room A",
     "meetingType": "in-person",
-    "additionalMetadata": {}
+    "participants": [
+        {
+            "externalUserId": "user_123",
+            "role": "host",
+            "metadata": {
+                "firstName": "John",
+                "lastName": "Doe",
+                "email": "john@example.com",
+                "phone": "+1234567890"
+            }
+        },
+        {
+            "externalUserId": "user_456",
+            "role": "guest",
+            "metadata": {
+                "firstName": "Jane",
+                "lastName": "Smith",
+                "email": "jane@example.com",
+                "phone": "+0987654321"
+            }
+        }
+    ],
+    "metadata": {}
 }
 ```
 
@@ -436,7 +500,7 @@ Get all appointments for the authenticated product.
 
 #### **GET /appointments/:appointmentId**
 
-Get a specific appointment by ID.
+Get a specific appointment by ID with all participants.
 
 **Response:**
 
@@ -445,12 +509,39 @@ Get a specific appointment by ID.
     "success": true,
     "data": {
         "id": "uuid",
+        "productId": "uuid",
+        "createdBy": "user_123",
         "title": "Business Meeting",
-        "user1": {...},
-        "user2": {...},
+        "description": "Discuss Q1 goals",
         "startTime": "2026-02-15T10:00:00Z",
         "endTime": "2026-02-15T11:00:00Z",
+        "location": "Conference Room A",
+        "meetingType": "in-person",
         "status": "pending",
+        "participants": [
+            {
+                "id": "uuid",
+                "externalUserId": "user_123",
+                "role": "host",
+                "status": "accepted",
+                "userMetadata": {
+                    "firstName": "John",
+                    "lastName": "Doe",
+                    "email": "john@example.com"
+                }
+            },
+            {
+                "id": "uuid",
+                "externalUserId": "user_456",
+                "role": "guest",
+                "status": "pending",
+                "userMetadata": {
+                    "firstName": "Jane",
+                    "lastName": "Smith",
+                    "email": "jane@example.com"
+                }
+            }
+        ],
         "createdAt": "2026-01-30T10:00:00Z",
         "updatedAt": "2026-01-30T10:00:00Z"
     }
@@ -459,13 +550,55 @@ Get a specific appointment by ID.
 
 #### **GET /appointments/user/:userId**
 
-Get all appointments for a specific user.
+Get all appointments for a specific user (where user is a participant).
 
 **Query Parameters:**
 
-- Same as GET /appointments
+- `page` (default: 1)
+- `limit` (default: 20, max: 100)
+- `status` (optional: pending, confirmed, cancelled, completed)
+- `role` (optional: host, guest, attendee, observer) - Filter by user's role
+- `startDate` (optional: ISO 8601)
+- `endDate` (optional: ISO 8601)
 
-**Response:** Same structure as GET /appointments
+**Response:**
+
+```json
+{
+    "success": true,
+    "data": {
+        "appointments": [
+            {
+                "id": "uuid",
+                "title": "Business Meeting",
+                "createdBy": "user_123",
+                "startTime": "2026-02-15T10:00:00Z",
+                "endTime": "2026-02-15T11:00:00Z",
+                "status": "pending",
+                "myRole": "host",
+                "myStatus": "accepted",
+                "participantCount": 2,
+                "otherParticipants": [
+                    {
+                        "externalUserId": "user_456",
+                        "role": "guest",
+                        "metadata": {
+                            "firstName": "Jane",
+                            "lastName": "Smith"
+                        }
+                    }
+                ]
+            }
+        ],
+        "pagination": {
+            "page": 1,
+            "limit": 20,
+            "total": 100,
+            "totalPages": 5
+        }
+    }
+}
+```
 
 #### **PATCH /appointments/:appointmentId**
 
@@ -1314,22 +1447,27 @@ func NewClient() *AppointmentClient {
 }
 
 type CreateAppointmentRequest struct {
-    User1 UserMetadata `json:"user1"`
-    User2 UserMetadata `json:"user2"`
-    Title string `json:"title"`
-    Description string `json:"description"`
-    StartTime time.Time `json:"startTime"`
-    EndTime time.Time `json:"endTime"`
-    Location string `json:"location"`
-    MeetingType string `json:"meetingType"`
+    Title        string                `json:"title"`
+    Description  string                `json:"description"`
+    StartTime    time.Time             `json:"startTime"`
+    EndTime      time.Time             `json:"endTime"`
+    Location     string                `json:"location"`
+    MeetingType  string                `json:"meetingType"`
+    Participants []ParticipantRequest  `json:"participants"`
+    Metadata     map[string]interface{} `json:"metadata,omitempty"`
+}
+
+type ParticipantRequest struct {
+    ExternalUserID string                 `json:"externalUserId"`
+    Role           string                 `json:"role"` // host, guest, attendee
+    Metadata       map[string]interface{} `json:"metadata"`
 }
 
 type UserMetadata struct {
-    UserID string `json:"userId"`
     FirstName string `json:"firstName"`
-    LastName string `json:"lastName"`
-    Email string `json:"email"`
-    Phone string `json:"phone"`
+    LastName  string `json:"lastName"`
+    Email     string `json:"email,omitempty"`
+    Phone     string `json:"phone,omitempty"`
 }
 
 type AppointmentResponse struct {
@@ -1573,24 +1711,32 @@ func (h *AppointmentHandler) ScheduleMeeting(w http.ResponseWriter, r *http.Requ
 
     // Create appointment
     appointmentReq := appointment.CreateAppointmentRequest{
-        User1: appointment.UserMetadata{
-            UserID:    user1.ID,
-            FirstName: user1.FirstName,
-            LastName:  user1.LastName,
-            Email:     user1.Email,
-            Phone:     user1.Phone,
-        },
-        User2: appointment.UserMetadata{
-            UserID:    user2.ID,
-            FirstName: user2.FirstName,
-            LastName:  user2.LastName,
-            Email:     user2.Email,
-            Phone:     user2.Phone,
-        },
         Title:       req.Title,
         StartTime:   req.StartTime,
         EndTime:     req.EndTime,
         MeetingType: "online",
+        Participants: []appointment.ParticipantRequest{
+            {
+                ExternalUserID: user1.ID,
+                Role:           "host",
+                Metadata: map[string]interface{}{
+                    "firstName": user1.FirstName,
+                    "lastName":  user1.LastName,
+                    "email":     user1.Email,
+                    "phone":     user1.Phone,
+                },
+            },
+            {
+                ExternalUserID: user2.ID,
+                Role:           "guest",
+                Metadata: map[string]interface{}{
+                    "firstName": user2.FirstName,
+                    "lastName":  user2.LastName,
+                    "email":     user2.Email,
+                    "phone":     user2.Phone,
+                },
+            },
+        },
     }
 
     result, err := h.appointmentClient.CreateAppointment(appointmentReq)
@@ -1623,24 +1769,32 @@ app.post('/api/schedule-meeting', async (req, res) => {
         
         // Create appointment
         const appointment = await appointmentService.createAppointment({
-            user1: {
-                userId: user1.id,
-                firstName: user1.firstName,
-                lastName: user1.lastName,
-                email: user1.email,
-                phone: user1.phone
-            },
-            user2: {
-                userId: user2.id,
-                firstName: user2.firstName,
-                lastName: user2.lastName,
-                email: user2.email,
-                phone: user2.phone
-            },
             title: title,
             startTime: startTime,
             endTime: endTime,
-            meetingType: 'online'
+            meetingType: 'online',
+            participants: [
+                {
+                    externalUserId: user1.id,
+                    role: 'host',
+                    metadata: {
+                        firstName: user1.firstName,
+                        lastName: user1.lastName,
+                        email: user1.email,
+                        phone: user1.phone
+                    }
+                },
+                {
+                    externalUserId: user2.id,
+                    role: 'guest',
+                    metadata: {
+                        firstName: user2.firstName,
+                        lastName: user2.lastName,
+                        email: user2.email,
+                        phone: user2.phone
+                    }
+                }
+            ]
         });
         
         res.json({ success: true, appointment });
