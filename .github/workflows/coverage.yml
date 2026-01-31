@@ -1,0 +1,53 @@
+name: Coverage
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  coverage:
+    name: Update Coverage Badge
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: appointments
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: appointments_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      
+      - name: Run tests with coverage
+        run: go test -v -coverprofile=coverage.out -covermode=atomic ./...
+      
+      - name: Calculate coverage
+        id: coverage
+        run: |
+          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+          echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
+      
+      - name: Update README with coverage
+        run: |
+          echo "Coverage: ${{ steps.coverage.outputs.coverage }}%"
+          # Could update README.md badge here if needed
