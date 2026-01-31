@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile
     container_name: appointment-service
     ports:
-      - "8080:8080"
+      - "8081:8080"
     environment:
       - GO_ENV=development
       - DB_HOST=postgres
@@ -27,8 +27,6 @@ services:
     networks:
       - appointment-network
     restart: unless-stopped
-    volumes:
-      - .:/app  # Mount for development
 
   postgres:
     image: postgres:15-alpine
@@ -38,7 +36,7 @@ services:
       - POSTGRES_PASSWORD=secure_password
       - POSTGRES_DB=appointments_dev
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:
@@ -54,7 +52,7 @@ services:
     image: redis:7-alpine
     container_name: appointment-redis
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redis-data:/data
     networks:
@@ -71,7 +69,7 @@ services:
     image: prom/prometheus:latest
     container_name: appointment-prometheus
     ports:
-      - "9090:9090"
+      - "9091:9090"
     volumes:
       - ./deployments/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus-data:/prometheus
@@ -86,7 +84,7 @@ services:
     image: grafana/grafana:latest
     container_name: appointment-grafana
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
