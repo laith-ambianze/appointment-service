@@ -24,6 +24,7 @@ git checkout -b hotfix/critical-fix
 ### 2. Make Your Changes
 
 Follow our coding standards (see below) and ensure:
+
 - Code is properly formatted
 - Tests are written for new features
 - Documentation is updated if needed
@@ -68,7 +69,7 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 ### Format
 
-```
+```md
 <type>(<scope>): <description>
 
 [optional body]
@@ -79,7 +80,7 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/):
 ### Types
 
 | Type | Description |
-|------|-------------|
+| ------ | ------------- |
 | `feat` | New feature |
 | `fix` | Bug fix |
 | `docs` | Documentation changes |
@@ -94,7 +95,7 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 ### Examples
 
-```bash
+```md
 # Feature
 feat(appointments): add participant role validation
 
@@ -289,11 +290,12 @@ make test-coverage
 
 ### PR Title Format
 
-```
+```md
 <type>(<scope>): <description>
 ```
 
 Examples:
+
 - `feat(appointments): add bulk creation endpoint`
 - `fix(availability): handle DST transitions correctly`
 - `docs(readme): update quick start guide`
@@ -327,6 +329,7 @@ Closes #123
 ## Questions?
 
 If you have questions about contributing, feel free to:
+
 - Open an issue for discussion
 - Check existing issues and PRs
 - Review the documentation in `docs/`
