@@ -1,114 +1,236 @@
-# Appointment as a Service (AaaS)
+# Appointment Service
 
-A centralized appointment scheduling system built in Go that integrates with multiple products via APIs.
+[![CI Pipeline](https://github.com/laith-ambianze/appointment-service/actions/workflows/ci.yml/badge.svg)](https://github.com/laith-ambianze/appointment-service/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/laith-ambianze/appointment-service)](https://goreportcard.com/report/github.com/laith-ambianze/appointment-service)
+[![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://go.dev/)
 
-## 📋 Project Overview
+Multi-tenant appointment management microservice built with Go.
 
-This is a standalone backend service that:
+## Features
 
-- ✅ Owns appointments
-- ✅ Integrates with multiple products via APIs
-- ✅ Uses one shared database
-- ❌ Does not own users (products maintain their own users)
+- 🏢 **Multi-tenant Architecture** - Complete product isolation with API key authentication
+- 👥 **Flexible Participant Model** - Support for 1-on-1 and group appointments
+- 🔐 **Secure Authentication** - API key/secret authentication for products
+- 🌍 **Timezone Support** - Full timezone handling with UTC storage
+- 📅 **Availability Management** - Configurable availability rules per user
+- 🔔 **Webhook Notifications** - Event-driven notifications to products
+- 📊 **Prometheus Metrics** - Built-in monitoring and observability
+- ⚡ **High Performance** - Raw SQL with pgx for optimal database access
 
-## 🏗️ Architecture
+## Tech Stack
 
-```md
-[ Product A ] ─┐
-[ Product B ] ─┼──> Appointment API (Go)
-[ Product C ] ─┘         |
-                       Database
+| Component | Technology |
+|-----------|------------|
+| Language | Go 1.21+ |
+| Framework | Gin |
+| Database | PostgreSQL 15+ |
+| DB Driver | pgx v5 (raw SQL) |
+| Cache | Redis 7+ |
+| Migrations | golang-migrate |
+| Logging | Zap |
+| Testing | Go testing + testify |
+| Deployment | Docker + Kubernetes |
+
+## Project Structure
+
+```
+appointment-service/
+├── cmd/api/                 # Application entry point
+├── internal/                # Private application code
+│   ├── config/             # Configuration management
+│   ├── handlers/           # HTTP handlers
+│   ├── middleware/         # HTTP middleware (auth, CORS, logging)
+│   ├── models/             # Domain models
+│   ├── repository/         # Data access layer (pgx)
+│   ├── routes/             # Route definitions
+│   └── service/            # Business logic
+├── pkg/                    # Public reusable packages
+│   ├── auth/              # Authentication utilities
+│   ├── database/          # Database connection utilities
+│   ├── logger/            # Logging utilities
+│   └── validator/         # Validation utilities
+├── migrations/            # Database migrations (SQL files)
+├── tests/                 # Test files
+│   ├── unit/             # Unit tests
+│   └── integration/      # Integration tests
+├── docs/                  # Documentation
+│   ├── adr/              # Architecture Decision Records
+│   └── swagger/          # API documentation
+├── deployments/          # Deployment configurations
+│   ├── docker/           # Docker files
+│   ├── kubernetes/       # K8s manifests
+│   └── prometheus/       # Monitoring configs
+└── scripts/              # Utility scripts
 ```
 
-## 📚 Documentation
+## Quick Start
 
-- **[APPOINTMENT_AS_A_SERVICE.md](APPOINTMENT_AS_A_SERVICE.md)** - Primary architecture document with AaaS approach
-- **[PROJECT_PLANNING.md](PROJECT_PLANNING.md)** - Comprehensive planning with detailed infrastructure choices
-- **[ARCHITECTURE_COMPARISON.md](ARCHITECTURE_COMPARISON.md)** - Detailed comparison of different architectural approaches
+### Prerequisites
 
-## 🎯 Recommended Approach
+- Go 1.21 or higher
+- PostgreSQL 15+
+- Redis 7+
+- Docker & Docker Compose (optional)
 
-**Start with the AaaS (Appointment as a Service) model:**
+### Installation
 
-- 40-50% faster MVP (4-6 weeks vs 8 weeks)
-- 60% lower infrastructure costs
-- Simpler architecture (no sync service)
-- Better horizontal scalability
-- No GDPR compliance burden
-- Easier to evolve over time
+```bash
+# Clone the repository
+git clone https://github.com/laith-ambianze/appointment-service.git
+cd appointment-service
 
-## 🚀 Key Features (Planned)
+# Install dependencies
+make install
 
-### Phase 1 (MVP)
-
-- Product authentication
-- Create / list / cancel appointments
-- Metadata support
-- Time conflict validation
-- Dockerized Go service
-
-### Phase 2
-
-- Availability management
-- Participants support
-- Webhooks
-
-## 🛠️ Technology Stack
-
-- **Language:** Go
-- **Database:** PostgreSQL (JSONB for metadata)
-- **API:** RESTful
-- **Authentication:** Product-level API keys / JWT
-- **Container:** Docker
-
-## 📊 Core Data Model
-
-```sql
-products
-- id (uuid)
-- name
-- status
-- created_at
-
-appointments
-- id (uuid)
-- product_id (fk)
-- external_user_id
-- start_time
-- end_time
-- status
-- metadata (jsonb)
-- created_at
+# Install development tools
+make install-tools
 ```
 
-## 🔑 Key Design Decisions
+### Configuration
 
-1. **No User Storage** - Store only `external_user_id` references
-2. **Metadata-First** - Use JSONB for all product-specific data
-3. **Product-Scoped Auth** - Every request requires product identification
-4. **Stateless API** - No session storage, JWT-based auth
+```bash
+# Copy environment template
+cp .env.example .env
 
-## 📈 Success Metrics
+# Edit configuration as needed
+```
 
-- API Latency: < 100ms p95
-- Uptime: > 99.9%
-- Concurrent Products: Support 10+ products initially
-- Throughput: 1000+ appointments/day per product
+### Running Locally
 
-## 🏁 Getting Started
+```bash
+# Start database and redis with Docker
+make docker-up
 
-Coming soon - Implementation in progress
+# Run database migrations
+make migrate-up
 
-## 📝 License
+# Start the application
+make run
 
-To be determined
+# Or with hot reload
+make dev
+```
 
-## 👥 Contributing
+### Using Docker Compose
 
-Guidelines to be added
+```bash
+# Start all services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f app
+
+# Stop services
+docker-compose down
+```
+
+## API Endpoints
+
+### Health Checks
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Service health status |
+| GET | `/ready` | Readiness check (K8s) |
+| GET | `/live` | Liveness check (K8s) |
+
+### Products (Admin)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/v1/products/register` | Register a new product |
+
+### Appointments
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/v1/appointments` | Create appointment |
+| GET | `/v1/appointments/:id` | Get appointment by ID |
+| GET | `/v1/appointments` | List appointments |
+| PUT | `/v1/appointments/:id` | Update appointment |
+| DELETE | `/v1/appointments/:id` | Cancel appointment |
+
+### Availability
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/v1/availability/:user_id` | Get user availability |
+| PUT | `/v1/availability/:user_id` | Update availability settings |
+| GET | `/v1/availability/:user_id/slots` | Get available time slots |
+
+## Development
+
+### Available Commands
+
+```bash
+make help              # Show all available commands
+make install           # Install dependencies
+make build             # Build binary
+make run               # Run application
+make dev               # Run with hot reload
+make test              # Run tests
+make test-coverage     # Run tests with coverage
+make lint              # Run linter
+make fmt               # Format code
+make migrate-up        # Apply migrations
+make migrate-down      # Rollback migrations
+make migrate-create    # Create new migration
+make docker-build      # Build Docker image
+make docker-up         # Start Docker services
+make docker-down       # Stop Docker services
+make swagger           # Generate API docs
+```
+
+### Code Style
+
+- Follow [Effective Go](https://go.dev/doc/effective_go)
+- Run `make fmt` before committing
+- Ensure `make lint` passes
+- Write tests for new features
+
+### Testing
+
+```bash
+# Run all tests
+make test
+
+# Run with coverage report
+make test-coverage
+
+# Run specific test
+go test -v ./internal/service/... -run TestCreateAppointment
+```
+
+## Architecture
+
+This service is designed as a **general-purpose appointment microservice** that can serve multiple products. Key architectural decisions:
+
+- **Multi-tenancy**: Product-level isolation with `product_id` on all queries
+- **External Users**: No internal user management - uses external user IDs
+- **Flexible Participants**: Support for any number of participants per appointment
+- **Metadata-first**: JSONB fields for product-specific data
+- **Event-driven**: Webhook notifications for all appointment events
+
+See [docs/adr/](docs/adr/) for detailed Architecture Decision Records.
+
+## Documentation
+
+- [Appointment as a Service Design](APPOINTMENT_AS_A_SERVICE.md)
+- [Architecture Comparison](ARCHITECTURE_COMPARISON.md)
+- [Migration Strategy](MIGRATION_STRATEGY_AND_ARCHITECTURE.md)
+- [Final Project Plan](FINAL_PROJECT_PLAN.md)
+- [Design Decision: Participants](DESIGN_DECISION_PARTICIPANTS.md)
+- [API Specification](docs/swagger/)
+- [Architecture Decisions](docs/adr/)
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-**Status:** Design Phase - Ready for Implementation  
-**Created:** January 24, 2026  
-**Next Action:** Initialize Go project and database schema
+**Built with ❤️ for scalable appointment management**
