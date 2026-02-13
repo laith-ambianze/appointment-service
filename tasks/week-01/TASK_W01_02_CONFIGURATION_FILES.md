@@ -1,6 +1,6 @@
 # Task W01-02: Configuration Files
 
-**Status**: Not Started  
+**Status**: ✅ COMPLETED  
 **Estimated Time**: 2-3 hours  
 **Prerequisites**: TASK_W01_01_PROJECT_SETUP.md  
 **Next Task**: TASK_W01_03_ADR_DOCUMENTS.md
@@ -22,12 +22,12 @@ Location: `appointment-service/.env.example`
 ```bash
 # Application
 GO_ENV=development
-API_PORT=8080
+API_PORT=8081
 API_HOST=0.0.0.0
 
 # Database
 DB_HOST=localhost
-DB_PORT=5432
+DB_PORT=1998
 DB_USER=appointments
 DB_PASSWORD=change-me-in-production
 DB_NAME=appointments_dev
@@ -47,7 +47,7 @@ JWT_SECRET=your-jwt-secret-key-minimum-32-characters-change-in-production
 API_SECRET_SALT_ROUNDS=10
 
 # CORS
-CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8080
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8081
 CORS_ALLOWED_METHODS=GET,POST,PUT,PATCH,DELETE,OPTIONS
 CORS_ALLOWED_HEADERS=Content-Type,Authorization,X-API-Key,X-API-Secret
 
@@ -87,7 +87,7 @@ GOFMT=$(GOCMD) fmt
 BINARY_NAME=$(APP_NAME)
 
 # Database
-DB_DSN=postgresql://appointments:password@localhost:5432/appointments_dev?sslmode=disable
+DB_DSN=postgresql://appointments:password@localhost:1998/appointments_dev?sslmode=disable
 
 # Colors
 CYAN=\033[0;36m
@@ -255,11 +255,11 @@ COPY --from=builder /app/migrations ./migrations
 COPY --from=builder /app/.env.example .env.example
 
 # Expose port
-EXPOSE 8080
+EXPOSE 8081
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8081/health || exit 1
 
 # Run the application
 CMD ["./main"]
@@ -323,11 +323,11 @@ services:
       dockerfile: Dockerfile
     container_name: appointment-service
     ports:
-      - "8080:8080"
+      - "8081:8081"
     environment:
       - GO_ENV=development
       - DB_HOST=postgres
-      - DB_PORT=5432
+      - DB_PORT=1998
       - DB_USER=appointments
       - DB_PASSWORD=secure_password
       - DB_NAME=appointments_dev
@@ -354,7 +354,7 @@ services:
       - POSTGRES_PASSWORD=secure_password
       - POSTGRES_DB=appointments_dev
     ports:
-      - "5432:5432"
+      - "1998:1998"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:
@@ -489,7 +489,7 @@ global:
 scrape_configs:
   - job_name: 'appointment-service'
     static_configs:
-      - targets: ['app:8080']
+      - targets: ['app:8081']
     metrics_path: '/metrics'
 ```
 
@@ -593,16 +593,16 @@ git push origin master
 
 ## Verification Checklist
 
-- [ ] .env.example created with all configuration options
-- [ ] Makefile created with all development commands
-- [ ] Dockerfile created for production builds
-- [ ] .dockerignore configured
-- [ ] docker-compose.yml created with all services
-- [ ] .air.toml created for hot reload
-- [ ] .editorconfig created
-- [ ] .golangci.yml created for linting
-- [ ] Prometheus config created
-- [ ] All files committed and pushed
+- [x] .env.example created with all configuration options
+- [x] Makefile created with all development commands
+- [x] Dockerfile created for production builds
+- [x] .dockerignore configured
+- [x] docker-compose.yml created with all services
+- [x] .air.toml created for hot reload
+- [x] .editorconfig created
+- [x] .golangci.yml created for linting
+- [x] Prometheus config created
+- [x] All files committed and pushed
 
 ---
 
@@ -627,4 +627,4 @@ Proceed to **TASK_W01_03_ADR_DOCUMENTS.md** to create Architecture Decision Reco
 
 ---
 
-**Status**: ⏸️ Ready to Start
+**Status**: ✅ COMPLETED (Commit: 5701af2)

@@ -1,6 +1,6 @@
 # Task W01-05: Initial Code Skeleton
 
-**Status**: Not Started  
+**Status**: ✅ COMPLETED  
 **Estimated Time**: 2-3 hours  
 **Prerequisites**: TASK_W01_04_CICD_PIPELINE.md  
 **Next Task**: Week 02 Tasks
@@ -85,11 +85,11 @@ func Load() (*Config, error) {
 		// Application
 		Env:     getEnv("GO_ENV", "development"),
 		APIHost: getEnv("API_HOST", "0.0.0.0"),
-		APIPort: getEnv("API_PORT", "8080"),
+		APIPort: getEnv("API_PORT", "8081"),
 
 		// Database
 		DBHost:               getEnv("DB_HOST", "localhost"),
-		DBPort:               getEnv("DB_PORT", "5432"),
+		DBPort:               getEnv("DB_PORT", "1998"),
 		DBUser:               getEnv("DB_USER", "appointments"),
 		DBPassword:           getEnv("DB_PASSWORD", "password"),
 		DBName:               getEnv("DB_NAME", "appointments_dev"),
@@ -587,7 +587,7 @@ make run
 # In another terminal, test endpoints
 
 # Health check
-curl http://localhost:8080/health
+curl http://localhost:8081/health
 
 # Expected response:
 # {
@@ -599,13 +599,13 @@ curl http://localhost:8080/health
 # }
 
 # Ready check
-curl http://localhost:8080/ready
+curl http://localhost:8081/ready
 
 # Live check
-curl http://localhost:8080/live
+curl http://localhost:8081/live
 
 # Ping endpoint
-curl http://localhost:8080/v1/ping
+curl http://localhost:8081/v1/ping
 
 # Expected: {"message":"pong"}
 ```
@@ -620,7 +620,7 @@ make docker-up
 make docker-logs
 
 # Test health endpoint
-curl http://localhost:8080/health
+curl http://localhost:8081/health
 
 # Stop services
 make docker-down
@@ -674,8 +674,8 @@ git push origin master
 When running `make run`, you should see:
 
 ```
-2026-01-31T12:00:00.000Z	INFO	appointment-service/main.go:35	Starting Appointment Service	{"env": "development", "port": "8080", "log_level": "debug"}
-2026-01-31T12:00:00.000Z	INFO	appointment-service/main.go:59	Server starting	{"address": "0.0.0.0:8080"}
+2026-01-31T12:00:00.000Z	INFO	appointment-service/main.go:35	Starting Appointment Service	{"env": "development", "port": "8081", "log_level": "debug"}
+2026-01-31T12:00:00.000Z	INFO	appointment-service/main.go:59	Server starting	{"address": "0.0.0.0:8081"}
 ```
 
 When making a request:
@@ -715,4 +715,4 @@ You now have:
 
 ---
 
-**Status**: ⏸️ Ready to Start
+**Status**: ✅ COMPLETED (Commit: 5d21be4)

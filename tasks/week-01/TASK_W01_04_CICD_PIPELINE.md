@@ -1,6 +1,6 @@
 # Task W01-04: CI/CD Pipeline Setup
 
-**Status**: Not Started  
+**Status**: ✅ COMPLETED  
 **Estimated Time**: 2-3 hours  
 **Prerequisites**: TASK_W01_03_ADR_DOCUMENTS.md  
 **Next Task**: TASK_W01_05_INITIAL_CODE.md
@@ -66,7 +66,7 @@ jobs:
           POSTGRES_PASSWORD: test_password
           POSTGRES_DB: appointments_test
         ports:
-          - 5432:5432
+          - 1998:1998
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -103,14 +103,14 @@ jobs:
           which migrate
       
       - name: Run database migrations
-        run: migrate -path migrations -database "postgresql://appointments:test_password@localhost:5432/appointments_test?sslmode=disable" up
+        run: migrate -path migrations -database "postgresql://appointments:test_password@localhost:1998/appointments_test?sslmode=disable" up
         continue-on-error: true  # Continue if no migrations exist yet
       
       - name: Run tests
         env:
           GO_ENV: test
           DB_HOST: localhost
-          DB_PORT: 5432
+          DB_PORT: 1998
           DB_USER: appointments
           DB_PASSWORD: test_password
           DB_NAME: appointments_test
@@ -383,7 +383,7 @@ jobs:
           POSTGRES_PASSWORD: test_password
           POSTGRES_DB: appointments_test
         ports:
-          - 5432:5432
+          - 1998:1998
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -484,15 +484,15 @@ git push origin master
 
 ## Verification Checklist
 
-- [ ] `.github/workflows/ci.yml` created
-- [ ] `.github/workflows/dependencies.yml` created
-- [ ] `.github/workflows/security.yml` created
-- [ ] `.github/workflows/release.yml` created
-- [ ] `.github/workflows/coverage.yml` created
-- [ ] README.md updated with badges
+- [x] `.github/workflows/ci.yml` created
+- [x] `.github/workflows/dependencies.yml` created
+- [x] `.github/workflows/security.yml` created
+- [x] `.github/workflows/release.yml` created
+- [x] `.github/workflows/coverage.yml` created
+- [x] README.md updated with badges
 - [ ] Branch protection rules configured on GitHub
-- [ ] GitHub Actions workflows pushed
-- [ ] First workflow run triggered automatically
+- [x] GitHub Actions workflows pushed
+- [x] First workflow run triggered automatically
 
 ---
 
@@ -556,4 +556,4 @@ Proceed to **TASK_W01_05_INITIAL_CODE.md** to create the initial application cod
 
 ---
 
-**Status**: ⏸️ Ready to Start
+**Status**: ✅ COMPLETED (Commit: 3d89eda)

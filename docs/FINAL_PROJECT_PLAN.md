@@ -81,10 +81,10 @@ docker-compose exec app ./main -migrate
 
 ```bash
 # Health check
-curl http://localhost:8080/health
+curl http://localhost:8081/health
 
 # Register a product
-curl -X POST http://localhost:8080/v1/products/register \
+curl -X POST http://localhost:8081/v1/products/register \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Test Product",
@@ -448,7 +448,7 @@ Create a new appointment.
                 "firstName": "Jane",
                 "lastName": "Smith",
                 "email": "jane@example.com",
-                "phone": "+0987654321"
+                "phone": "+0987619981"
             }
         }
     ],
@@ -698,12 +698,12 @@ Permanently delete an appointment (admin only).
 ```env
 # Application
 GO_ENV=production
-API_PORT=8080
+API_PORT=8081
 API_HOST=0.0.0.0
 
 # Database
 DB_HOST=localhost
-DB_PORT=5432
+DB_PORT=1998
 DB_USER=appointments
 DB_PASSWORD=your-secure-password
 DB_NAME=appointments
@@ -822,7 +822,7 @@ COPY --from=builder /app/migrations ./migrations
 # Copy .env if needed (or use environment variables)
 COPY .env.example .env
 
-EXPOSE 8080
+EXPOSE 8081
 
 CMD ["./main"]
 ```
@@ -837,17 +837,17 @@ services:
     build: .
     container_name: appointment-service
     ports:
-      - "8080:8080"
+      - "8081:8081"
     environment:
       GO_ENV: production
       DB_HOST: db
-      DB_PORT: 5432
+      DB_PORT: 1998
       DB_USER: appointments
       DB_PASSWORD: password
       DB_NAME: appointments
       DB_SSL_MODE: disable
       JWT_SECRET: ${JWT_SECRET}
-      API_PORT: 8080
+      API_PORT: 8081
     depends_on:
       db:
         condition: service_healthy
@@ -867,7 +867,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./migrations:/docker-entrypoint-initdb.d
     ports:
-      - "5432:5432"
+      - "1998:1998"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U appointments"]
       interval: 10s
@@ -930,7 +930,7 @@ GOMOD=$(GOCMD) mod
 BINARY_NAME=$(APP_NAME)
 
 # Database
-DB_URL=postgresql://appointments:password@localhost:5432/appointments?sslmode=disable
+DB_URL=postgresql://appointments:password@localhost:1998/appointments?sslmode=disable
 
 all: test build
 
@@ -1964,7 +1964,7 @@ func TestCreateAppointmentEndpoint(t *testing.T) {
 go install github.com/tsenart/vegeta@latest
 
 # Run load test
-echo "GET http://localhost:8080/v1/appointments" | vegeta attack -duration=30s -rate=100 | vegeta report
+echo "GET http://localhost:8081/v1/appointments" | vegeta attack -duration=30s -rate=100 | vegeta report
 ```
 
 - Concurrent requests handling
