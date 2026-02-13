@@ -1183,7 +1183,7 @@ Product C ──────────┘
 ```yaml
 services:
   - name: appointment-service
-    url: http://appointment-service:8080
+    url: http://appointment-service:8081
     routes:
       - name: appointments-route
         paths:
@@ -1653,7 +1653,7 @@ services:
   appointment-service:
     build: .
     ports:
-      - "8080:8080"
+      - "8081:8081"
     environment:
       - DB_HOST=postgres
       - REDIS_HOST=redis
@@ -1723,7 +1723,7 @@ spec:
       - name: appointment-service
         image: company/appointment-service:v1.0.0
         ports:
-        - containerPort: 8080
+        - containerPort: 8081
         env:
         - name: DB_HOST
           valueFrom:
@@ -1740,13 +1740,13 @@ spec:
         livenessProbe:
           httpGet:
             path: /health
-            port: 8080
+            port: 8081
           initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           httpGet:
             path: /ready
-            port: 8080
+            port: 8081
           initialDelaySeconds: 5
           periodSeconds: 5
 ---
@@ -1759,7 +1759,7 @@ spec:
     app: appointment-service
   ports:
   - port: 80
-    targetPort: 8080
+    targetPort: 8081
   type: LoadBalancer
 ```
 

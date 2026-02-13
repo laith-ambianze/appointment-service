@@ -1,6 +1,6 @@
 # Task W01-03: Architecture Decision Records (ADR)
 
-**Status**: Not Started  
+**Status**: ✅ COMPLETED  
 **Estimated Time**: 1-2 hours  
 **Prerequisites**: TASK_W01_02_CONFIGURATION_FILES.md  
 **Next Task**: TASK_W01_04_CICD_PIPELINE.md
@@ -238,7 +238,7 @@ v1 := router.Group("/v1")
 }
 
 // Start server
-router.Run(":8080")
+router.Run(":8081")
 ```
 
 ## References
@@ -397,7 +397,7 @@ func Load() (*Config, error) {
     
     return &Config{
         Env:        getEnv("GO_ENV", "development"),
-        APIPort:    getEnv("API_PORT", "8080"),
+        APIPort:    getEnv("API_PORT", "8081"),
         DBHost:     getEnv("DB_HOST", "localhost"),
         // ... more fields
     }, nil
@@ -618,14 +618,14 @@ git push origin master
 
 ## Verification Checklist
 
-- [ ] TEMPLATE.md created for future ADRs
-- [ ] ADR-001 (Database Access Layer) created
-- [ ] ADR-002 (API Framework) created
-- [ ] ADR-003 (Logging) created
-- [ ] ADR-004 (Configuration) created
-- [ ] ADR-005 (Testing) created
-- [ ] README.md index created
-- [ ] All ADRs committed and pushed
+- [x] TEMPLATE.md created for future ADRs
+- [x] ADR-001 (Database Access Layer) created
+- [x] ADR-002 (API Framework) created
+- [x] ADR-003 (Logging) created
+- [x] ADR-004 (Configuration) created
+- [x] ADR-005 (Testing) created
+- [x] README.md index created
+- [x] All ADRs committed and pushed
 
 ---
 
@@ -635,4 +635,4 @@ Proceed to **TASK_W01_04_CICD_PIPELINE.md** to set up GitHub Actions and CI/CD.
 
 ---
 
-**Status**: ⏸️ Ready to Start
+**Status**: ✅ COMPLETED (Commit: 7e8206b)

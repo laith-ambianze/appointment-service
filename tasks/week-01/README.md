@@ -74,7 +74,7 @@ These tasks must be completed in sequence:
 Week 01 is complete when:
 
 - [ ] Application runs successfully (`make run`)
-- [ ] Health endpoint returns 200 OK (`curl http://localhost:8080/health`)
+- [ ] Health endpoint returns 200 OK (`curl http://localhost:8081/health`)
 - [ ] Docker Compose starts all services (`make docker-up`)
 - [ ] CI pipeline passes on GitHub Actions
 - [ ] All code is committed and pushed
@@ -216,7 +216,7 @@ appointment-service/
 cat .env
 
 # Check if port is available
-lsof -i :8080
+lsof -i :8081
 
 # Check logs
 tail -f logs/app.log
