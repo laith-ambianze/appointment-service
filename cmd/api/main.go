@@ -1,12 +1,145 @@
 package main
 
-// Appointment Service - Entry Point
-// This file will be implemented in TASK_W01_05
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/laith-ambianze/appointment-service/internal/config"
+	"github.com/laith-ambianze/appointment-service/internal/handlers"
+	"github.com/laith-ambianze/appointment-service/pkg/logger"
+	"go.uber.org/zap"
+)
 
 func main() {
-	// TODO: Implement in TASK_W01_05_INITIAL_CODE
-	// - Load configuration
-	// - Initialize logger
-	// - Setup HTTP router
-	// - Start server with graceful shutdown
+	// Load configuration
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Printf("Failed to load configuration: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Initialize logger
+	log, err := logger.New(cfg.LogLevel, cfg.LogFormat)
+	if err != nil {
+		fmt.Printf("Failed to initialize logger: %v\n", err)
+		os.Exit(1)
+	}
+	defer log.Sync()
+
+	log.Info("Starting Appointment Service",
+		zap.String("env", cfg.Env),
+		zap.String("port", cfg.APIPort),
+		zap.String("log_level", cfg.LogLevel),
+	)
+
+	// Set Gin mode
+	if cfg.IsProduction() {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
+	// Create Gin router
+	router := gin.New()
+
+	// Add middleware
+	router.Use(gin.Recovery())
+	router.Use(loggerMiddleware(log))
+
+	// Setup routes
+	setupRoutes(router)
+
+	// Create HTTP server
+	addr := fmt.Sprintf("%s:%s", cfg.APIHost, cfg.APIPort)
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           router,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	// Start server in goroutine
+	go func() {
+		log.Info("Server starting", zap.String("address", addr))
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal("Failed to start server", zap.Error(err))
+		}
+	}()
+
+	// Wait for interrupt signal
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Info("Shutting down server...")
+
+	// Graceful shutdown with 5 second timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatal("Server forced to shutdown", zap.Error(err))
+	}
+
+	log.Info("Server exited")
+}
+
+// setupRoutes configures all application routes
+func setupRoutes(router *gin.Engine) {
+	// Health check handler
+	healthHandler := handlers.NewHealthHandler()
+
+	// Health check endpoints (no version prefix)
+	router.GET("/health", healthHandler.Health)
+	router.GET("/ready", healthHandler.Ready)
+	router.GET("/live", healthHandler.Live)
+
+	// API v1 routes
+	v1 := router.Group("/v1")
+	{
+		// TODO: Add API endpoints here
+		v1.GET("/ping", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{
+				"message": "pong",
+			})
+		})
+	}
+}
+
+// loggerMiddleware creates a Gin middleware for logging
+func loggerMiddleware(log *logger.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+		path := c.Request.URL.Path
+		raw := c.Request.URL.RawQuery
+
+		// Process request
+		c.Next()
+
+		// Log request
+		latency := time.Since(start)
+		clientIP := c.ClientIP()
+		method := c.Request.Method
+		statusCode := c.Writer.Status()
+		errorMessage := c.Errors.ByType(gin.ErrorTypePrivate).String()
+
+		if raw != "" {
+			path = path + "?" + raw
+		}
+
+		log.Info("HTTP Request",
+			zap.String("method", method),
+			zap.String("path", path),
+			zap.Int("status", statusCode),
+			zap.Duration("latency", latency),
+			zap.String("client_ip", clientIP),
+			zap.String("error", errorMessage),
+		)
+	}
 }
