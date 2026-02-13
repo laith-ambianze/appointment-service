@@ -16,7 +16,13 @@ GOFMT=$(GOCMD) fmt
 BINARY_NAME=$(APP_NAME)
 
 # Database
-DB_DSN=postgresql://appointments:password@localhost:5432/appointments_dev?sslmode=disable
+DB_USER ?= appointments
+DB_PASSWORD ?= secure_password
+DB_HOST ?= localhost
+DB_PORT ?= 5433
+DB_NAME ?= appointments_dev
+DB_DSN=postgresql://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=disable
+MIGRATIONS_PATH=./migrations
 
 # Colors
 CYAN=\033[0;36m
@@ -81,15 +87,20 @@ clean: ## Clean build artifacts
 	rm -f coverage.out coverage.html
 	@echo "$(GREEN)Clean complete$(NC)"
 
-migrate-up: ## Run database migrations up
+migrate-up: ## Run all pending migrations
 	@echo "$(CYAN)Running migrations up...$(NC)"
-	migrate -path migrations -database "$(DB_DSN)" up
+	migrate -path $(MIGRATIONS_PATH) -database "$(DB_DSN)" up
 	@echo "$(GREEN)Migrations applied$(NC)"
 
-migrate-down: ## Run database migrations down
-	@echo "$(CYAN)Running migrations down...$(NC)"
-	migrate -path migrations -database "$(DB_DSN)" down
-	@echo "$(GREEN)Migrations reverted$(NC)"
+migrate-down: ## Rollback last migration
+	@echo "$(CYAN)Rolling back last migration...$(NC)"
+	migrate -path $(MIGRATIONS_PATH) -database "$(DB_DSN)" down 1
+	@echo "$(GREEN)Migration rolled back$(NC)"
+
+migrate-down-all: ## Rollback all migrations
+	@echo "$(CYAN)Rolling back all migrations...$(NC)"
+	migrate -path $(MIGRATIONS_PATH) -database "$(DB_DSN)" down -all
+	@echo "$(GREEN)All migrations rolled back$(NC)"
 
 migrate-create: ## Create new migration (usage: make migrate-create name=create_users)
 	@echo "$(CYAN)Creating migration: $(name)$(NC)"
@@ -97,8 +108,21 @@ migrate-create: ## Create new migration (usage: make migrate-create name=create_
 		echo "$(RED)Error: name is required. Usage: make migrate-create name=create_users$(NC)"; \
 		exit 1; \
 	fi
-	migrate create -ext sql -dir migrations -seq $(name)
+	migrate create -ext sql -dir $(MIGRATIONS_PATH) -seq $(name)
 	@echo "$(GREEN)Migration created$(NC)"
+
+migrate-status: ## Show current migration version
+	@echo "$(CYAN)Migration status:$(NC)"
+	@migrate -path $(MIGRATIONS_PATH) -database "$(DB_DSN)" version
+
+migrate-force: ## Force migration version (usage: make migrate-force version=1)
+	@echo "$(CYAN)Forcing migration version to $(version)$(NC)"
+	@if [ -z "$(version)" ]; then \
+		echo "$(RED)Error: version is required. Usage: make migrate-force version=1$(NC)"; \
+		exit 1; \
+	fi
+	migrate -path $(MIGRATIONS_PATH) -database "$(DB_DSN)" force $(version)
+	@echo "$(GREEN)Migration version forced$(NC)"
 
 docker-build: ## Build Docker image
 	@echo "$(CYAN)Building Docker image...$(NC)"
@@ -117,6 +141,35 @@ docker-down: ## Stop services with Docker Compose
 
 docker-logs: ## View Docker Compose logs
 	docker-compose logs -f
+
+# Database commands
+db-start: ## Start only database service
+	@echo "$(CYAN)Starting database...$(NC)"
+	docker-compose up -d postgres
+	@echo "$(GREEN)Database started on port 1998$(NC)"
+
+db-stop: ## Stop database service
+	@echo "$(CYAN)Stopping database...$(NC)"
+	docker-compose stop postgres
+	@echo "$(GREEN)Database stopped$(NC)"
+
+db-reset: ## Reset database (drop and recreate)
+	@echo "$(CYAN)Resetting database...$(NC)"
+	docker-compose down -v postgres
+	docker-compose up -d postgres
+	@echo "$(GREEN)Database reset complete$(NC)"
+
+db-console: ## Open PostgreSQL console
+	@echo "$(CYAN)Opening PostgreSQL console...$(NC)"
+	docker-compose exec postgres psql -U appointments -d appointments_dev
+
+db-logs: ## View database logs
+	docker-compose logs -f postgres
+
+db-seed: ## Seed database with test data
+	@echo "$(CYAN)Seeding database...$(NC)"
+	docker-compose exec -T postgres psql -U appointments -d appointments_dev < scripts/seed_database.sql
+	@echo "$(GREEN)Database seeded$(NC)"
 
 dev: ## Run in development mode with hot reload (requires air)
 	@echo "$(CYAN)Starting development server with hot reload...$(NC)"

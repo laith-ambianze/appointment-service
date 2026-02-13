@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/laith-ambianze/appointment-service/internal/config"
 	"github.com/laith-ambianze/appointment-service/internal/handlers"
+	"github.com/laith-ambianze/appointment-service/pkg/database"
 	"github.com/laith-ambianze/appointment-service/pkg/logger"
 	"go.uber.org/zap"
 )
@@ -38,6 +39,25 @@ func main() {
 		zap.String("log_level", cfg.LogLevel),
 	)
 
+	// Initialize database connection
+	dbConfig := database.Config{
+		Host:            cfg.DBHost,
+		Port:            cfg.DBPort,
+		User:            cfg.DBUser,
+		Password:        cfg.DBPassword,
+		Database:        cfg.DBName,
+		SSLMode:         cfg.DBSSLMode,
+		MaxConnections:  cfg.DBMaxConnections,
+		MaxIdleConns:    cfg.DBMaxIdleConnections,
+		ConnMaxLifetime: parseDuration(cfg.DBMaxLifetime, 5*time.Minute),
+	}
+
+	db, err := database.NewPostgresDB(dbConfig, log.Logger)
+	if err != nil {
+		log.Fatal("Failed to connect to database", zap.Error(err))
+	}
+	defer db.Close()
+
 	// Set Gin mode
 	if cfg.IsProduction() {
 		gin.SetMode(gin.ReleaseMode)
@@ -51,7 +71,7 @@ func main() {
 	router.Use(loggerMiddleware(log))
 
 	// Setup routes
-	setupRoutes(router)
+	setupRoutes(router, db)
 
 	// Create HTTP server
 	addr := fmt.Sprintf("%s:%s", cfg.APIHost, cfg.APIPort)
@@ -91,14 +111,41 @@ func main() {
 }
 
 // setupRoutes configures all application routes
-func setupRoutes(router *gin.Engine) {
+func setupRoutes(router *gin.Engine, db *database.PostgresDB) {
 	// Health check handler
 	healthHandler := handlers.NewHealthHandler()
 
 	// Health check endpoints (no version prefix)
 	router.GET("/health", healthHandler.Health)
-	router.GET("/ready", healthHandler.Ready)
 	router.GET("/live", healthHandler.Live)
+
+	// Ready endpoint with database health check
+	router.GET("/ready", func(c *gin.Context) {
+		ctx := c.Request.Context()
+		dbHealth := db.Health(ctx)
+
+		response := gin.H{
+			"status": "ok",
+			"checks": gin.H{
+				"database": gin.H{
+					"status":        dbHealth.Status,
+					"response_time": dbHealth.ResponseTime,
+					"connections":   dbHealth.Connections.TotalConnections,
+				},
+			},
+		}
+
+		if dbHealth.Status != database.HealthStatusHealthy {
+			response["status"] = "degraded"
+			if dbHealth.Status == database.HealthStatusUnhealthy {
+				response["status"] = "unhealthy"
+				c.JSON(http.StatusServiceUnavailable, response)
+				return
+			}
+		}
+
+		c.JSON(http.StatusOK, response)
+	})
 
 	// API v1 routes
 	v1 := router.Group("/v1")
@@ -142,4 +189,16 @@ func loggerMiddleware(log *logger.Logger) gin.HandlerFunc {
 			zap.String("error", errorMessage),
 		)
 	}
+}
+
+// parseDuration parses a duration string and returns default if parsing fails
+func parseDuration(s string, defaultDuration time.Duration) time.Duration {
+	if s == "" {
+		return defaultDuration
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return defaultDuration
+	}
+	return d
 }

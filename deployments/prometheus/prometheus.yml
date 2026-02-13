@@ -5,5 +5,5 @@ global:
 scrape_configs:
   - job_name: 'appointment-service'
     static_configs:
-      - targets: ['app:8080']
+      - targets: ['app:8081']
     metrics_path: '/metrics'

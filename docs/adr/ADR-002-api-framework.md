@@ -7,6 +7,7 @@
 ## Context
 
 We need to choose an HTTP framework for building REST APIs in Go. Main options:
+
 1. Gin - Popular, feature-rich, good performance
 2. Fiber - Fastest, Express.js-like API
 3. Echo - Lightweight, minimalist
@@ -28,6 +29,7 @@ We will use **Gin** for our HTTP API framework.
 ## Consequences
 
 ### Positive
+
 - Fast development with clean API
 - Extensive middleware available
 - Good documentation and examples
@@ -35,6 +37,7 @@ We will use **Gin** for our HTTP API framework.
 - Active community support
 
 ### Negative
+
 - Slightly slower than Fiber
 - More dependencies than standard library
 - Not part of Go standard library
@@ -42,11 +45,13 @@ We will use **Gin** for our HTTP API framework.
 ## Alternatives Considered
 
 ### Alternative 1: Fiber
+
 **Pros**: Fastest framework, Express.js-like  
 **Cons**: Non-standard context, different patterns  
 **Why Not**: Gin provides sufficient performance with better ecosystem
 
 ### Alternative 2: net/http (Standard Library)
+
 **Pros**: No dependencies, standard  
 **Cons**: Too low-level, more boilerplate  
 **Why Not**: Would require building too much infrastructure
@@ -69,7 +74,7 @@ v1 := router.Group("/v1")
 }
 
 // Start server
-router.Run(":8080")
+router.Run(":8081")
 ```
 
 ## References

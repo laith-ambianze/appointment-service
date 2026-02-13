@@ -7,11 +7,13 @@
 ## Context
 
 We need a way to manage configuration across different environments:
+
 - Local development
 - Docker containers
 - Kubernetes production
 
 Requirements:
+
 - Environment variables support
 - Default values
 - Type-safe configuration
@@ -57,7 +59,7 @@ func Load() (*Config, error) {
     
     return &Config{
         Env:        getEnv("GO_ENV", "development"),
-        APIPort:    getEnv("API_PORT", "8080"),
+        APIPort:    getEnv("API_PORT", "8081"),
         DBHost:     getEnv("DB_HOST", "localhost"),
         // ... more fields
     }, nil
@@ -89,11 +91,13 @@ func getEnv(key, fallback string) string {
 ## Alternatives Considered
 
 ### Alternative 1: Viper
+
 **Pros**: Feature-rich, supports many formats  
 **Cons**: Overkill for our needs, more dependencies  
 **Why Not**: godotenv + struct is simpler
 
 ### Alternative 2: envconfig
+
 **Pros**: Struct tag-based config  
 **Cons**: Less control, magic through reflection  
 **Why Not**: Custom solution is more explicit
