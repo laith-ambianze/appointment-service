@@ -15,6 +15,8 @@ type Config struct {
 	Logger             *zap.Logger
 	HealthHandler      *handlers.HealthHandler
 	AppointmentHandler *handlers.AppointmentHandler
+	ProductHandler     *handlers.ProductHandler // Optional: can be nil if not needed
+	AuthHandler        *handlers.AuthHandler    // Optional: can be nil if not needed
 }
 
 // RegisterRoutes registers all application routes
@@ -22,6 +24,19 @@ func RegisterRoutes(cfg Config) {
 	// Public health check endpoints (no auth required)
 	cfg.Router.GET("/health", cfg.HealthHandler.Health)
 	cfg.Router.GET("/live", cfg.HealthHandler.Live)
+
+	// Public product endpoints (no JWT required)
+	if cfg.ProductHandler != nil {
+		// Product registration - public endpoint
+		cfg.Router.POST("/v1/products/register", cfg.ProductHandler.Register)
+		// Credential validation - public endpoint
+		cfg.Router.POST("/v1/products/validate", cfg.ProductHandler.ValidateCredentials)
+	}
+
+	// Public auth endpoint (no JWT required - uses API key/secret instead)
+	if cfg.AuthHandler != nil {
+		cfg.Router.POST("/v1/auth/token", cfg.AuthHandler.GenerateToken)
+	}
 
 	// JWT Auth middleware config
 	authConfig := middleware.JWTAuthConfig{
@@ -32,6 +47,9 @@ func RegisterRoutes(cfg Config) {
 			"/live",
 			"/ready",
 			"/v1/docs/*",
+			"/v1/products/register",
+			"/v1/products/validate",
+			"/v1/auth/token",
 		},
 	}
 
@@ -74,6 +92,34 @@ func RegisterRoutes(cfg Config) {
 
 				// Update participant status (accept/decline) - user can update own, admin/provider can update any
 				participants.PATCH("/:user_id/status", cfg.AppointmentHandler.UpdateParticipantStatus)
+			}
+		}
+
+		// Products - Protected endpoints
+		if cfg.ProductHandler != nil {
+			products := v1.Group("/products")
+			{
+				// Get current product (from JWT) - any authenticated user
+				products.GET("/me", cfg.ProductHandler.GetCurrent)
+
+				// Update current product - any authenticated user
+				products.PATCH("/me", cfg.ProductHandler.UpdateCurrent)
+
+				// Regenerate credentials for current product - any authenticated user
+				products.POST("/me/regenerate-credentials", cfg.ProductHandler.RegenerateCredentials)
+
+				// Admin-only product management
+				// List all products - admin only
+				products.GET("", middleware.RequireAdmin(), cfg.ProductHandler.List)
+
+				// Get product by ID - admin only
+				products.GET("/:id", middleware.RequireAdmin(), cfg.ProductHandler.GetByID)
+
+				// Update product by ID - admin only
+				products.PATCH("/:id", middleware.RequireAdmin(), cfg.ProductHandler.Update)
+
+				// Delete product - admin only
+				products.DELETE("/:id", middleware.RequireAdmin(), cfg.ProductHandler.Delete)
 			}
 		}
 	}

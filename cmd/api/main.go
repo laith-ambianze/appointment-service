@@ -81,16 +81,20 @@ func main() {
 
 	// Initialize repositories
 	appointmentRepo := repository.NewAppointmentRepository(db.Pool, log.Logger)
+	productRepo := repository.NewProductRepository(db.Pool, log.Logger)
 
 	// Initialize services
 	appointmentService := service.NewAppointmentService(appointmentRepo, log.Logger)
+	productService := service.NewProductService(productRepo, log.Logger)
 
 	// Initialize handlers
 	healthHandler := handlers.NewHealthHandler()
 	appointmentHandler := handlers.NewAppointmentHandler(appointmentService, log.Logger)
+	productHandler := handlers.NewProductHandler(productService, log.Logger)
+	authHandler := handlers.NewAuthHandler(productService, jwtManager, log.Logger)
 
 	// Setup routes
-	setupRoutes(router, db, jwtManager, log.Logger, healthHandler, appointmentHandler)
+	setupRoutes(router, db, jwtManager, log.Logger, healthHandler, appointmentHandler, productHandler, authHandler)
 
 	// Create HTTP server
 	addr := fmt.Sprintf("%s:%s", cfg.APIHost, cfg.APIPort)
@@ -130,7 +134,7 @@ func main() {
 }
 
 // setupRoutes configures all application routes
-func setupRoutes(router *gin.Engine, db *database.PostgresDB, jwtManager *auth.JWTManager, zapLogger *zap.Logger, healthHandler *handlers.HealthHandler, appointmentHandler *handlers.AppointmentHandler) {
+func setupRoutes(router *gin.Engine, db *database.PostgresDB, jwtManager *auth.JWTManager, zapLogger *zap.Logger, healthHandler *handlers.HealthHandler, appointmentHandler *handlers.AppointmentHandler, productHandler *handlers.ProductHandler, authHandler *handlers.AuthHandler) {
 	// Register all routes using the routes package
 	routes.RegisterRoutes(routes.Config{
 		Router:             router,
@@ -138,6 +142,8 @@ func setupRoutes(router *gin.Engine, db *database.PostgresDB, jwtManager *auth.J
 		Logger:             zapLogger,
 		HealthHandler:      healthHandler,
 		AppointmentHandler: appointmentHandler,
+		ProductHandler:     productHandler,
+		AuthHandler:        authHandler,
 	})
 
 	// Ready endpoint with database health check
