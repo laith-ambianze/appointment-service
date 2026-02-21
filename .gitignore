@@ -55,7 +55,6 @@ temp/
 
 # Build artifacts
 main
-appointment-service
 
 # Air (hot reload)
 tmp/

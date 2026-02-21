@@ -12,6 +12,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/laith-ambianze/appointment-service/internal/config"
 	"github.com/laith-ambianze/appointment-service/internal/handlers"
+	"github.com/laith-ambianze/appointment-service/internal/middleware"
+	"github.com/laith-ambianze/appointment-service/internal/repository"
+	"github.com/laith-ambianze/appointment-service/internal/routes"
+	"github.com/laith-ambianze/appointment-service/internal/service"
+	"github.com/laith-ambianze/appointment-service/pkg/auth"
 	"github.com/laith-ambianze/appointment-service/pkg/database"
 	"github.com/laith-ambianze/appointment-service/pkg/logger"
 	"go.uber.org/zap"
@@ -68,10 +73,24 @@ func main() {
 
 	// Add middleware
 	router.Use(gin.Recovery())
+	router.Use(middleware.CORSFromConfig(cfg.CORSAllowedOrigins, cfg.CORSAllowedMethods, cfg.CORSAllowedHeaders))
 	router.Use(loggerMiddleware(log))
 
+	// Initialize JWT manager
+	jwtManager := auth.NewJWTManager(cfg.JWTSecret)
+
+	// Initialize repositories
+	appointmentRepo := repository.NewAppointmentRepository(db.Pool, log.Logger)
+
+	// Initialize services
+	appointmentService := service.NewAppointmentService(appointmentRepo, log.Logger)
+
+	// Initialize handlers
+	healthHandler := handlers.NewHealthHandler()
+	appointmentHandler := handlers.NewAppointmentHandler(appointmentService, log.Logger)
+
 	// Setup routes
-	setupRoutes(router, db)
+	setupRoutes(router, db, jwtManager, log.Logger, healthHandler, appointmentHandler)
 
 	// Create HTTP server
 	addr := fmt.Sprintf("%s:%s", cfg.APIHost, cfg.APIPort)
@@ -111,13 +130,15 @@ func main() {
 }
 
 // setupRoutes configures all application routes
-func setupRoutes(router *gin.Engine, db *database.PostgresDB) {
-	// Health check handler
-	healthHandler := handlers.NewHealthHandler()
-
-	// Health check endpoints (no version prefix)
-	router.GET("/health", healthHandler.Health)
-	router.GET("/live", healthHandler.Live)
+func setupRoutes(router *gin.Engine, db *database.PostgresDB, jwtManager *auth.JWTManager, zapLogger *zap.Logger, healthHandler *handlers.HealthHandler, appointmentHandler *handlers.AppointmentHandler) {
+	// Register all routes using the routes package
+	routes.RegisterRoutes(routes.Config{
+		Router:             router,
+		JWTManager:         jwtManager,
+		Logger:             zapLogger,
+		HealthHandler:      healthHandler,
+		AppointmentHandler: appointmentHandler,
+	})
 
 	// Ready endpoint with database health check
 	router.GET("/ready", func(c *gin.Context) {
@@ -146,17 +167,6 @@ func setupRoutes(router *gin.Engine, db *database.PostgresDB) {
 
 		c.JSON(http.StatusOK, response)
 	})
-
-	// API v1 routes
-	v1 := router.Group("/v1")
-	{
-		// TODO: Add API endpoints here
-		v1.GET("/ping", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{
-				"message": "pong",
-			})
-		})
-	}
 }
 
 // loggerMiddleware creates a Gin middleware for logging
