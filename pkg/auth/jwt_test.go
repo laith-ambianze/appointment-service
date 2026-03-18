@@ -202,7 +202,7 @@ func TestJWTManager_GenerateTokenWithExpiry(t *testing.T) {
 	// Validate and check expiry
 	claims, err := manager.ValidateToken(token)
 	require.NoError(t, err)
-	
+
 	// Allow 1 second tolerance for time comparison
 	assert.WithinDuration(t, customExpiry, claims.ExpiresAt.Time, time.Second)
 }

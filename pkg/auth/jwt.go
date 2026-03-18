@@ -58,10 +58,10 @@ func (c *Claims) Validate() error {
 
 // JWTConfig holds configuration for JWT operations
 type JWTConfig struct {
-	Secret           string
-	Issuer           string
-	ExpirationHours  int
-	SigningMethod    jwt.SigningMethod
+	Secret          string
+	Issuer          string
+	ExpirationHours int
+	SigningMethod   jwt.SigningMethod
 }
 
 // DefaultJWTConfig returns default JWT configuration
@@ -94,7 +94,7 @@ func NewJWTManagerWithConfig(config JWTConfig) *JWTManager {
 // externalUserID is the user identifier from the integrating product - not stored in this service
 func (m *JWTManager) GenerateToken(productID uuid.UUID, externalUserID string, role Role) (string, error) {
 	now := time.Now()
-	
+
 	claims := Claims{
 		ProductID:      productID,
 		ExternalUserID: externalUserID,
@@ -115,7 +115,7 @@ func (m *JWTManager) GenerateToken(productID uuid.UUID, externalUserID string, r
 // GenerateTokenWithExpiry creates a token with custom expiration
 func (m *JWTManager) GenerateTokenWithExpiry(productID uuid.UUID, externalUserID string, role Role, expiry time.Time) (string, error) {
 	now := time.Now()
-	
+
 	claims := Claims{
 		ProductID:      productID,
 		ExternalUserID: externalUserID,
