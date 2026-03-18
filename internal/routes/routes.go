@@ -10,13 +10,14 @@ import (
 
 // Config holds dependencies for route registration
 type Config struct {
-	Router             *gin.Engine
-	JWTManager         *auth.JWTManager
-	Logger             *zap.Logger
-	HealthHandler      *handlers.HealthHandler
-	AppointmentHandler *handlers.AppointmentHandler
-	ProductHandler     *handlers.ProductHandler // Optional: can be nil if not needed
-	AuthHandler        *handlers.AuthHandler    // Optional: can be nil if not needed
+	Router              *gin.Engine
+	JWTManager          *auth.JWTManager
+	Logger              *zap.Logger
+	HealthHandler       *handlers.HealthHandler
+	AppointmentHandler  *handlers.AppointmentHandler
+	ProductHandler      *handlers.ProductHandler      // Optional: can be nil if not needed
+	AuthHandler         *handlers.AuthHandler         // Optional: can be nil if not needed
+	AvailabilityHandler *handlers.AvailabilityHandler // Optional: can be nil if not needed
 }
 
 // RegisterRoutes registers all application routes
@@ -92,6 +93,41 @@ func RegisterRoutes(cfg Config) {
 
 				// Update participant status (accept/decline) - user can update own, admin/provider can update any
 				participants.PATCH("/:user_id/status", cfg.AppointmentHandler.UpdateParticipantStatus)
+			}
+		}
+
+		// Availability endpoints - for provider scheduling
+		if cfg.AvailabilityHandler != nil {
+			// Get available slots - any authenticated user can check availability
+			v1.GET("/availability", cfg.AvailabilityHandler.GetAvailableSlots)
+
+			// Book an appointment with a provider
+			v1.POST("/appointments/book", cfg.AvailabilityHandler.BookAppointment)
+
+			// Provider availability rules management
+			providers := v1.Group("/providers/:provider_id")
+			{
+				// Availability rules CRUD
+				availability := providers.Group("/availability")
+				{
+					// Create availability rule - admin or provider
+					availability.POST("", middleware.RequireAdminOrProvider(), cfg.AvailabilityHandler.CreateAvailabilityRule)
+
+					// List availability rules - any authenticated user
+					availability.GET("", cfg.AvailabilityHandler.ListAvailabilityRules)
+
+					// Bulk create availability rules - admin or provider
+					availability.POST("/bulk", middleware.RequireAdminOrProvider(), cfg.AvailabilityHandler.BulkCreateAvailabilityRules)
+
+					// Get specific rule - any authenticated user
+					availability.GET("/:rule_id", cfg.AvailabilityHandler.GetAvailabilityRule)
+
+					// Update rule - admin or provider
+					availability.PATCH("/:rule_id", middleware.RequireAdminOrProvider(), cfg.AvailabilityHandler.UpdateAvailabilityRule)
+
+					// Delete rule - admin or provider
+					availability.DELETE("/:rule_id", middleware.RequireAdminOrProvider(), cfg.AvailabilityHandler.DeleteAvailabilityRule)
+				}
 			}
 		}
 

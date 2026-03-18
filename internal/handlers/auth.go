@@ -26,11 +26,12 @@ func NewAuthHandler(productService *service.ProductService, jwtManager *auth.JWT
 }
 
 // GenerateTokenRequest represents the request body for generating a token
+// ExternalUserID is the user identifier from the integrating product's system
 type GenerateTokenRequest struct {
-	APIKey    string `json:"api_key" binding:"required"`
-	APISecret string `json:"api_secret" binding:"required"`
-	UserID    string `json:"user_id" binding:"required"`
-	Role      string `json:"role" binding:"required,oneof=admin user provider"`
+	APIKey         string `json:"api_key" binding:"required"`
+	APISecret      string `json:"api_secret" binding:"required"`
+	ExternalUserID string `json:"external_user_id" binding:"required"`
+	Role           string `json:"role" binding:"required,oneof=admin user provider"`
 }
 
 // GenerateTokenResponse represents the response with JWT token
@@ -87,7 +88,7 @@ func (h *AuthHandler) GenerateToken(c *gin.Context) {
 	}
 
 	// Generate JWT token
-	token, err := h.jwtManager.GenerateToken(product.ID, req.UserID, role)
+	token, err := h.jwtManager.GenerateToken(product.ID, req.ExternalUserID, role)
 	if err != nil {
 		h.logger.Error("Failed to generate token", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
@@ -99,7 +100,7 @@ func (h *AuthHandler) GenerateToken(c *gin.Context) {
 
 	h.logger.Info("JWT token generated",
 		zap.String("product_id", product.ID.String()),
-		zap.String("user_id", req.UserID),
+		zap.String("external_user_id", req.ExternalUserID),
 		zap.String("role", req.Role),
 	)
 

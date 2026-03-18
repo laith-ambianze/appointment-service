@@ -77,6 +77,19 @@ func (m *MockAppointmentRepository) GetParticipants(ctx context.Context, appoint
 	return args.Get(0).([]models.AppointmentParticipant), args.Error(1)
 }
 
+func (m *MockAppointmentRepository) CreateWithLock(ctx context.Context, appointment *models.Appointment, participants []models.AppointmentParticipant) error {
+	args := m.Called(ctx, appointment, participants)
+	return args.Error(0)
+}
+
+func (m *MockAppointmentRepository) GetByProviderAndDateRange(ctx context.Context, productID uuid.UUID, providerID string, startTime, endTime time.Time) ([]models.Appointment, error) {
+	args := m.Called(ctx, productID, providerID, startTime, endTime)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]models.Appointment), args.Error(1)
+}
+
 func newTestService() (*AppointmentService, *MockAppointmentRepository) {
 	mockRepo := new(MockAppointmentRepository)
 	logger, _ := zap.NewDevelopment()

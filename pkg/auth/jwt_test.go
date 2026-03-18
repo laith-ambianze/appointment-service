@@ -60,38 +60,38 @@ func TestClaims_Validate(t *testing.T) {
 		{
 			name: "valid claims",
 			claims: Claims{
-				ProductID: validProductID,
-				UserID:    "user-123",
-				Role:      RoleUser,
+				ProductID:      validProductID,
+				ExternalUserID: "user-123",
+				Role:           RoleUser,
 			},
 			expectError: false,
 		},
 		{
 			name: "missing product_id",
 			claims: Claims{
-				ProductID: uuid.Nil,
-				UserID:    "user-123",
-				Role:      RoleUser,
+				ProductID:      uuid.Nil,
+				ExternalUserID: "user-123",
+				Role:           RoleUser,
 			},
 			expectError: true,
 			errorMsg:    "product_id is required",
 		},
 		{
-			name: "missing user_id",
+			name: "missing external_user_id",
 			claims: Claims{
-				ProductID: validProductID,
-				UserID:    "",
-				Role:      RoleUser,
+				ProductID:      validProductID,
+				ExternalUserID: "",
+				Role:           RoleUser,
 			},
 			expectError: true,
-			errorMsg:    "user_id is required",
+			errorMsg:    "external_user_id is required",
 		},
 		{
 			name: "invalid role",
 			claims: Claims{
-				ProductID: validProductID,
-				UserID:    "user-123",
-				Role:      Role("invalid"),
+				ProductID:      validProductID,
+				ExternalUserID: "user-123",
+				Role:           Role("invalid"),
 			},
 			expectError: true,
 			errorMsg:    "invalid role",
@@ -114,11 +114,11 @@ func TestClaims_Validate(t *testing.T) {
 func TestJWTManager_GenerateAndValidateToken(t *testing.T) {
 	manager := NewJWTManager("test-secret-key-12345")
 	productID := uuid.New()
-	userID := "user-123"
+	externalUserID := "user-123"
 	role := RoleAdmin
 
 	// Generate token
-	token, err := manager.GenerateToken(productID, userID, role)
+	token, err := manager.GenerateToken(productID, externalUserID, role)
 	require.NoError(t, err)
 	assert.NotEmpty(t, token)
 
@@ -126,21 +126,21 @@ func TestJWTManager_GenerateAndValidateToken(t *testing.T) {
 	claims, err := manager.ValidateToken(token)
 	require.NoError(t, err)
 	assert.Equal(t, productID, claims.ProductID)
-	assert.Equal(t, userID, claims.UserID)
+	assert.Equal(t, externalUserID, claims.ExternalUserID)
 	assert.Equal(t, role, claims.Role)
-	assert.Equal(t, userID, claims.Subject)
+	assert.Equal(t, externalUserID, claims.Subject)
 	assert.Equal(t, "appointment-service", claims.Issuer)
 }
 
 func TestJWTManager_ValidateToken_Expired(t *testing.T) {
 	manager := NewJWTManager("test-secret-key-12345")
 	productID := uuid.New()
-	userID := "user-123"
+	externalUserID := "user-123"
 	role := RoleUser
 
 	// Generate token with past expiration
 	expiry := time.Now().Add(-1 * time.Hour)
-	token, err := manager.GenerateTokenWithExpiry(productID, userID, role, expiry)
+	token, err := manager.GenerateTokenWithExpiry(productID, externalUserID, role, expiry)
 	require.NoError(t, err)
 
 	// Validate should fail
@@ -154,11 +154,11 @@ func TestJWTManager_ValidateToken_InvalidSignature(t *testing.T) {
 	manager2 := NewJWTManager("secret-2")
 
 	productID := uuid.New()
-	userID := "user-123"
+	externalUserID := "user-123"
 	role := RoleUser
 
 	// Generate token with first manager
-	token, err := manager1.GenerateToken(productID, userID, role)
+	token, err := manager1.GenerateToken(productID, externalUserID, role)
 	require.NoError(t, err)
 
 	// Validate with different secret should fail
@@ -191,12 +191,12 @@ func TestJWTManager_ValidateToken_MalformedToken(t *testing.T) {
 func TestJWTManager_GenerateTokenWithExpiry(t *testing.T) {
 	manager := NewJWTManager("test-secret")
 	productID := uuid.New()
-	userID := "user-123"
+	externalUserID := "user-123"
 	role := RoleProvider
 
 	// Generate token with custom expiry
 	customExpiry := time.Now().Add(48 * time.Hour)
-	token, err := manager.GenerateTokenWithExpiry(productID, userID, role, customExpiry)
+	token, err := manager.GenerateTokenWithExpiry(productID, externalUserID, role, customExpiry)
 	require.NoError(t, err)
 
 	// Validate and check expiry
@@ -217,10 +217,10 @@ func TestNewJWTManagerWithConfig(t *testing.T) {
 
 	manager := NewJWTManagerWithConfig(config)
 	productID := uuid.New()
-	userID := "user-123"
+	externalUserID := "user-123"
 	role := RoleAdmin
 
-	token, err := manager.GenerateToken(productID, userID, role)
+	token, err := manager.GenerateToken(productID, externalUserID, role)
 	require.NoError(t, err)
 
 	claims, err := manager.ValidateToken(token)

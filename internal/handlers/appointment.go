@@ -41,7 +41,7 @@ func NewAppointmentHandler(svc *service.AppointmentService, logger *zap.Logger) 
 // @Router /appointments [post]
 func (h *AppointmentHandler) Create(c *gin.Context) {
 	productID := middleware.MustGetProductID(c)
-	userID := middleware.MustGetUserID(c)
+	externalUserID := middleware.MustGetExternalUserID(c)
 
 	var req service.CreateAppointmentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -49,7 +49,7 @@ func (h *AppointmentHandler) Create(c *gin.Context) {
 		return
 	}
 
-	appointment, err := h.service.Create(c.Request.Context(), productID, userID, req)
+	appointment, err := h.service.Create(c.Request.Context(), productID, externalUserID, req)
 	if err != nil {
 		h.handleServiceError(c, err)
 		return
@@ -103,7 +103,7 @@ func (h *AppointmentHandler) GetByID(c *gin.Context) {
 // @Router /appointments [get]
 func (h *AppointmentHandler) List(c *gin.Context) {
 	productID := middleware.MustGetProductID(c)
-	userID := middleware.MustGetUserID(c)
+	externalUserID := middleware.MustGetExternalUserID(c)
 
 	var req service.ListAppointmentsRequest
 
@@ -120,7 +120,7 @@ func (h *AppointmentHandler) List(c *gin.Context) {
 	}
 	req.Offset = c.GetInt("offset")
 
-	appointments, err := h.service.ListByUser(c.Request.Context(), productID, userID, req)
+	appointments, err := h.service.ListByUser(c.Request.Context(), productID, externalUserID, req)
 	if err != nil {
 		h.handleServiceError(c, err)
 		return
@@ -151,7 +151,7 @@ func (h *AppointmentHandler) List(c *gin.Context) {
 // @Router /appointments/{id} [patch]
 func (h *AppointmentHandler) Update(c *gin.Context) {
 	productID := middleware.MustGetProductID(c)
-	userID := middleware.MustGetUserID(c)
+	externalUserID := middleware.MustGetExternalUserID(c)
 	role := middleware.MustGetRole(c)
 
 	appointmentID, err := uuid.Parse(c.Param("id"))
@@ -166,7 +166,7 @@ func (h *AppointmentHandler) Update(c *gin.Context) {
 		return
 	}
 
-	appointment, err := h.service.Update(c.Request.Context(), productID, userID, role, appointmentID, req)
+	appointment, err := h.service.Update(c.Request.Context(), productID, externalUserID, role, appointmentID, req)
 	if err != nil {
 		h.handleServiceError(c, err)
 		return
@@ -192,7 +192,7 @@ func (h *AppointmentHandler) Update(c *gin.Context) {
 // @Router /appointments/{id}/response [patch]
 func (h *AppointmentHandler) Respond(c *gin.Context) {
 	productID := middleware.MustGetProductID(c)
-	userID := middleware.MustGetUserID(c)
+	externalUserID := middleware.MustGetExternalUserID(c)
 	role := middleware.MustGetRole(c)
 
 	appointmentID, err := uuid.Parse(c.Param("id"))
@@ -207,7 +207,7 @@ func (h *AppointmentHandler) Respond(c *gin.Context) {
 		return
 	}
 
-	appointment, err := h.service.Respond(c.Request.Context(), productID, userID, role, appointmentID, req)
+	appointment, err := h.service.Respond(c.Request.Context(), productID, externalUserID, role, appointmentID, req)
 	if err != nil {
 		h.handleServiceError(c, err)
 		return
@@ -231,7 +231,7 @@ func (h *AppointmentHandler) Respond(c *gin.Context) {
 // @Router /appointments/{id}/cancel [post]
 func (h *AppointmentHandler) Cancel(c *gin.Context) {
 	productID := middleware.MustGetProductID(c)
-	userID := middleware.MustGetUserID(c)
+	externalUserID := middleware.MustGetExternalUserID(c)
 	role := middleware.MustGetRole(c)
 
 	appointmentID, err := uuid.Parse(c.Param("id"))
@@ -240,7 +240,7 @@ func (h *AppointmentHandler) Cancel(c *gin.Context) {
 		return
 	}
 
-	appointment, err := h.service.Cancel(c.Request.Context(), productID, userID, role, appointmentID)
+	appointment, err := h.service.Cancel(c.Request.Context(), productID, externalUserID, role, appointmentID)
 	if err != nil {
 		h.handleServiceError(c, err)
 		return
@@ -263,7 +263,7 @@ func (h *AppointmentHandler) Cancel(c *gin.Context) {
 // @Router /appointments/{id} [delete]
 func (h *AppointmentHandler) Delete(c *gin.Context) {
 	productID := middleware.MustGetProductID(c)
-	userID := middleware.MustGetUserID(c)
+	externalUserID := middleware.MustGetExternalUserID(c)
 	role := middleware.MustGetRole(c)
 
 	appointmentID, err := uuid.Parse(c.Param("id"))
@@ -272,7 +272,7 @@ func (h *AppointmentHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.Delete(c.Request.Context(), productID, userID, role, appointmentID); err != nil {
+	if err := h.service.Delete(c.Request.Context(), productID, externalUserID, role, appointmentID); err != nil {
 		h.handleServiceError(c, err)
 		return
 	}
@@ -297,7 +297,7 @@ func (h *AppointmentHandler) Delete(c *gin.Context) {
 // @Router /appointments/{id}/participants [post]
 func (h *AppointmentHandler) AddParticipant(c *gin.Context) {
 	productID := middleware.MustGetProductID(c)
-	userID := middleware.MustGetUserID(c)
+	externalUserID := middleware.MustGetExternalUserID(c)
 	role := middleware.MustGetRole(c)
 
 	appointmentID, err := uuid.Parse(c.Param("id"))
@@ -312,7 +312,7 @@ func (h *AppointmentHandler) AddParticipant(c *gin.Context) {
 		return
 	}
 
-	participant, err := h.service.AddParticipant(c.Request.Context(), productID, userID, role, appointmentID, req)
+	participant, err := h.service.AddParticipant(c.Request.Context(), productID, externalUserID, role, appointmentID, req)
 	if err != nil {
 		h.handleServiceError(c, err)
 		return
@@ -336,7 +336,7 @@ func (h *AppointmentHandler) AddParticipant(c *gin.Context) {
 // @Router /appointments/{id}/participants/{user_id} [delete]
 func (h *AppointmentHandler) RemoveParticipant(c *gin.Context) {
 	productID := middleware.MustGetProductID(c)
-	userID := middleware.MustGetUserID(c)
+	externalUserID := middleware.MustGetExternalUserID(c)
 	role := middleware.MustGetRole(c)
 
 	appointmentID, err := uuid.Parse(c.Param("id"))
@@ -351,7 +351,7 @@ func (h *AppointmentHandler) RemoveParticipant(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.RemoveParticipant(c.Request.Context(), productID, userID, role, appointmentID, participantUserID); err != nil {
+	if err := h.service.RemoveParticipant(c.Request.Context(), productID, externalUserID, role, appointmentID, participantUserID); err != nil {
 		h.handleServiceError(c, err)
 		return
 	}
@@ -377,7 +377,7 @@ func (h *AppointmentHandler) RemoveParticipant(c *gin.Context) {
 // @Router /appointments/{id}/participants/{user_id}/status [patch]
 func (h *AppointmentHandler) UpdateParticipantStatus(c *gin.Context) {
 	productID := middleware.MustGetProductID(c)
-	userID := middleware.MustGetUserID(c)
+	externalUserID := middleware.MustGetExternalUserID(c)
 	role := middleware.MustGetRole(c)
 
 	appointmentID, err := uuid.Parse(c.Param("id"))
@@ -398,7 +398,7 @@ func (h *AppointmentHandler) UpdateParticipantStatus(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.UpdateParticipantStatus(c.Request.Context(), productID, userID, role, appointmentID, participantUserID, req.Status); err != nil {
+	if err := h.service.UpdateParticipantStatus(c.Request.Context(), productID, externalUserID, role, appointmentID, participantUserID, req.Status); err != nil {
 		h.handleServiceError(c, err)
 		return
 	}

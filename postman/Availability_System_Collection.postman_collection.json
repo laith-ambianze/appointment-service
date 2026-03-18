@@ -1,0 +1,1247 @@
+{
+	"info": {
+		"_postman_id": "availability-booking-system-collection",
+		"name": "Provider Availability & Booking System",
+		"description": "Complete test collection for the Provider Availability and Booking System.\n\n## Setup Instructions\n\n1. **Import the Environment**: Import the companion environment file\n2. **Start the Server**: Run `go run ./cmd/api/` from the project root\n3. **Generate JWT Token**: Run `go run gen_token.go` and paste the token in the environment\n4. **Run Tests**: Execute requests in order from top to bottom\n\n## Key Features Tested\n- Dynamic slot generation (slots are computed, never stored)\n- Double-booking prevention via PostgreSQL EXCLUSION CONSTRAINT\n- Buffer times before/after appointments\n- Timezone support\n- Concurrency safety with REPEATABLE READ transactions",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "0. Setup & Health",
+			"item": [
+				{
+					"name": "Health Check",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Health status is healthy\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.status).to.eql(\"healthy\");",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/health",
+							"host": ["{{base_url}}"],
+							"path": ["health"]
+						},
+						"description": "Check if the server is running and healthy"
+					}
+				},
+				{
+					"name": "Register Product (Get API Key)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 201\", function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"",
+									"pm.test(\"Response has product data\", function () {",
+									"    pm.expect(jsonData.data).to.have.property(\"id\");",
+									"    pm.expect(jsonData.data).to.have.property(\"api_key\");",
+									"    pm.expect(jsonData.data).to.have.property(\"api_secret\");",
+									"});",
+									"",
+									"// Save credentials for later use",
+									"pm.collectionVariables.set(\"product_id\", jsonData.data.id);",
+									"pm.collectionVariables.set(\"api_key\", jsonData.data.api_key);",
+									"pm.collectionVariables.set(\"api_secret\", jsonData.data.api_secret);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Test Appointment App\",\n    \"description\": \"Testing the availability system\",\n    \"webhook_url\": \"https://example.com/webhooks\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/products/register",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "products", "register"]
+						},
+						"description": "Register a new product to get API credentials"
+					}
+				},
+				{
+					"name": "Get JWT Token",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"",
+									"pm.test(\"Response has access token\", function () {",
+									"    pm.expect(jsonData.data).to.have.property(\"access_token\");",
+									"});",
+									"",
+									"// Save token for authenticated requests",
+									"pm.collectionVariables.set(\"jwt_token\", jsonData.data.access_token);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"api_key\": \"{{api_key}}\",\n    \"api_secret\": \"{{api_secret}}\",\n    \"user_id\": \"{{user_id}}\",\n    \"role\": \"admin\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/auth/token",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "auth", "token"]
+						},
+						"description": "Exchange API credentials for a JWT token"
+					}
+				}
+			],
+			"description": "Setup requests to initialize the testing environment"
+		},
+		{
+			"name": "1. Availability Rules CRUD",
+			"item": [
+				{
+					"name": "Create Availability Rule (Monday 9-17)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 201\", function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"",
+									"pm.test(\"Rule created with correct data\", function () {",
+									"    pm.expect(jsonData.data).to.have.property(\"id\");",
+									"    pm.expect(jsonData.data.day_of_week).to.eql(1);",
+									"    pm.expect(jsonData.data.duration_minutes).to.eql(30);",
+									"});",
+									"",
+									"pm.collectionVariables.set(\"rule_id_monday\", jsonData.data.id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"day_of_week\": 1,\n    \"start_time\": \"09:00\",\n    \"end_time\": \"17:00\",\n    \"duration_minutes\": 30,\n    \"slot_interval_minutes\": 15,\n    \"buffer_before_minutes\": 5,\n    \"buffer_after_minutes\": 5,\n    \"timezone\": \"UTC\",\n    \"is_active\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/providers/{{provider_id}}/availability",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "providers", "{{provider_id}}", "availability"]
+						},
+						"description": "Create availability rule for Monday: 9:00-17:00 UTC with 30-minute appointments every 15 minutes, 5-minute buffers"
+					}
+				},
+				{
+					"name": "Create Availability Rule (Tuesday 10-18)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 201\", function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"pm.collectionVariables.set(\"rule_id_tuesday\", jsonData.data.id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"day_of_week\": 2,\n    \"start_time\": \"10:00\",\n    \"end_time\": \"18:00\",\n    \"duration_minutes\": 60,\n    \"slot_interval_minutes\": 60,\n    \"buffer_before_minutes\": 10,\n    \"buffer_after_minutes\": 10,\n    \"timezone\": \"America/New_York\",\n    \"is_active\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/providers/{{provider_id}}/availability",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "providers", "{{provider_id}}", "availability"]
+						},
+						"description": "Create availability rule for Tuesday in New York timezone with 1-hour appointments"
+					}
+				},
+				{
+					"name": "Bulk Create Availability Rules (Wed-Fri)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 201\", function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"",
+									"pm.test(\"Multiple rules created\", function () {",
+									"    pm.expect(jsonData.data.created).to.be.greaterThan(0);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"rules\": [\n        {\n            \"day_of_week\": 3,\n            \"start_time\": \"09:00\",\n            \"end_time\": \"17:00\",\n            \"duration_minutes\": 45,\n            \"slot_interval_minutes\": 45,\n            \"buffer_before_minutes\": 0,\n            \"buffer_after_minutes\": 15,\n            \"timezone\": \"UTC\",\n            \"is_active\": true\n        },\n        {\n            \"day_of_week\": 4,\n            \"start_time\": \"08:00\",\n            \"end_time\": \"16:00\",\n            \"duration_minutes\": 30,\n            \"slot_interval_minutes\": 30,\n            \"buffer_before_minutes\": 5,\n            \"buffer_after_minutes\": 5,\n            \"timezone\": \"UTC\",\n            \"is_active\": true\n        },\n        {\n            \"day_of_week\": 5,\n            \"start_time\": \"10:00\",\n            \"end_time\": \"14:00\",\n            \"duration_minutes\": 60,\n            \"slot_interval_minutes\": 60,\n            \"buffer_before_minutes\": 0,\n            \"buffer_after_minutes\": 0,\n            \"timezone\": \"Europe/London\",\n            \"is_active\": true\n        }\n    ]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/providers/{{provider_id}}/availability/bulk",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "providers", "{{provider_id}}", "availability", "bulk"]
+						},
+						"description": "Create multiple availability rules at once for Wednesday, Thursday, and Friday"
+					}
+				},
+				{
+					"name": "List All Availability Rules",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"",
+									"pm.test(\"Returns array of rules\", function () {",
+									"    pm.expect(jsonData.data).to.be.an(\"array\");",
+									"});",
+									"",
+									"pm.test(\"Has rules for weekdays\", function () {",
+									"    pm.expect(jsonData.data.length).to.be.greaterThan(0);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/v1/providers/{{provider_id}}/availability",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "providers", "{{provider_id}}", "availability"]
+						},
+						"description": "List all availability rules for the provider"
+					}
+				},
+				{
+					"name": "Get Single Availability Rule",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"",
+									"pm.test(\"Returns rule data\", function () {",
+									"    pm.expect(jsonData.data).to.have.property(\"id\");",
+									"    pm.expect(jsonData.data).to.have.property(\"day_of_week\");",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/v1/providers/{{provider_id}}/availability/{{rule_id_monday}}",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "providers", "{{provider_id}}", "availability", "{{rule_id_monday}}"]
+						},
+						"description": "Get details of the Monday availability rule"
+					}
+				},
+				{
+					"name": "Update Availability Rule",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"",
+									"pm.test(\"Duration updated\", function () {",
+									"    pm.expect(jsonData.data.duration_minutes).to.eql(45);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"duration_minutes\": 45,\n    \"slot_interval_minutes\": 45\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/providers/{{provider_id}}/availability/{{rule_id_monday}}",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "providers", "{{provider_id}}", "availability", "{{rule_id_monday}}"]
+						},
+						"description": "Update Monday rule to 45-minute appointments"
+					}
+				}
+			],
+			"description": "CRUD operations for provider availability rules"
+		},
+		{
+			"name": "2. Slot Generation & Querying",
+			"item": [
+				{
+					"name": "Get Available Slots (Today)",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"// Set today's date in YYYY-MM-DD format",
+									"var today = new Date();",
+									"var dateStr = today.toISOString().split('T')[0];",
+									"pm.collectionVariables.set(\"today_date\", dateStr);"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"// May return 200 with empty slots or slots depending on day",
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"",
+									"pm.test(\"Response has slots array\", function () {",
+									"    pm.expect(jsonData.data).to.have.property(\"slots\");",
+									"    pm.expect(jsonData.data.slots).to.be.an(\"array\");",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/v1/availability?provider_id={{provider_id}}&date={{today_date}}",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "availability"],
+							"query": [
+								{
+									"key": "provider_id",
+									"value": "{{provider_id}}"
+								},
+								{
+									"key": "date",
+									"value": "{{today_date}}"
+								}
+							]
+						},
+						"description": "Get available time slots for today (may be empty if no rule exists for today's day of week)"
+					}
+				},
+				{
+					"name": "Get Available Slots (Next Monday)",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"// Find next Monday",
+									"var today = new Date();",
+									"var daysUntilMonday = (1 - today.getDay() + 7) % 7;",
+									"if (daysUntilMonday === 0) daysUntilMonday = 7; // If today is Monday, get next Monday",
+									"var nextMonday = new Date(today);",
+									"nextMonday.setDate(today.getDate() + daysUntilMonday);",
+									"var dateStr = nextMonday.toISOString().split('T')[0];",
+									"pm.collectionVariables.set(\"next_monday\", dateStr);",
+									"console.log(\"Next Monday: \" + dateStr);"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"",
+									"pm.test(\"Returns slots for Monday\", function () {",
+									"    pm.expect(jsonData.data.slots).to.be.an(\"array\");",
+									"    // Should have slots since we created Monday availability",
+									"    pm.expect(jsonData.data.slots.length).to.be.greaterThan(0);",
+									"});",
+									"",
+									"pm.test(\"Duration matches rule\", function () {",
+									"    pm.expect(jsonData.data.duration_minutes).to.eql(45); // Updated to 45 earlier",
+									"});",
+									"",
+									"// Save first slot for booking",
+									"if (jsonData.data.slots && jsonData.data.slots.length > 0) {",
+									"    pm.collectionVariables.set(\"slot_start_time\", jsonData.data.slots[0].start_time);",
+									"    pm.collectionVariables.set(\"slot_end_time\", jsonData.data.slots[0].end_time);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/v1/availability?provider_id={{provider_id}}&date={{next_monday}}",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "availability"],
+							"query": [
+								{
+									"key": "provider_id",
+									"value": "{{provider_id}}"
+								},
+								{
+									"key": "date",
+									"value": "{{next_monday}}"
+								}
+							]
+						},
+						"description": "Get available slots for next Monday - should return slots based on rule we created"
+					}
+				},
+				{
+					"name": "Get Available Slots (Past Date - Should Fail)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 400\", function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"",
+									"pm.test(\"Error message indicates past date\", function () {",
+									"    pm.expect(jsonData.error).to.include(\"past\");",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/v1/availability?provider_id={{provider_id}}&date=2020-01-01",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "availability"],
+							"query": [
+								{
+									"key": "provider_id",
+									"value": "{{provider_id}}"
+								},
+								{
+									"key": "date",
+									"value": "2020-01-01"
+								}
+							]
+						},
+						"description": "Attempt to get slots for a past date - should return error"
+					}
+				},
+				{
+					"name": "Get Available Slots (Sunday - No Rule)",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"// Find next Sunday",
+									"var today = new Date();",
+									"var daysUntilSunday = (7 - today.getDay()) % 7;",
+									"if (daysUntilSunday === 0) daysUntilSunday = 7;",
+									"var nextSunday = new Date(today);",
+									"nextSunday.setDate(today.getDate() + daysUntilSunday);",
+									"var dateStr = nextSunday.toISOString().split('T')[0];",
+									"pm.collectionVariables.set(\"next_sunday\", dateStr);"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"",
+									"pm.test(\"Returns empty slots for day without rule\", function () {",
+									"    pm.expect(jsonData.data.slots).to.be.an(\"array\");",
+									"    pm.expect(jsonData.data.slots.length).to.eql(0);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/v1/availability?provider_id={{provider_id}}&date={{next_sunday}}",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "availability"],
+							"query": [
+								{
+									"key": "provider_id",
+									"value": "{{provider_id}}"
+								},
+								{
+									"key": "date",
+									"value": "{{next_sunday}}"
+								}
+							]
+						},
+						"description": "Get slots for Sunday - should return empty since we have no Sunday rule"
+					}
+				}
+			],
+			"description": "Test dynamic slot generation based on availability rules"
+		},
+		{
+			"name": "3. Booking Appointments",
+			"item": [
+				{
+					"name": "Book Appointment (First Slot)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 201\", function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"",
+									"pm.test(\"Appointment created\", function () {",
+									"    pm.expect(jsonData.data).to.have.property(\"id\");",
+									"    pm.expect(jsonData.data).to.have.property(\"provider_id\");",
+									"    pm.expect(jsonData.data.status).to.eql(\"scheduled\");",
+									"});",
+									"",
+									"pm.collectionVariables.set(\"appointment_id\", jsonData.data.id);",
+									"pm.collectionVariables.set(\"booked_start_time\", jsonData.data.start_time);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"provider_id\": \"{{provider_id}}\",\n    \"start_time\": \"{{slot_start_time}}\",\n    \"title\": \"Initial Consultation\",\n    \"description\": \"First meeting with the provider\",\n    \"participants\": [\n        {\n            \"external_user_id\": \"{{user_id}}\",\n            \"role\": \"guest\"\n        }\n    ]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/appointments/book",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "appointments", "book"]
+						},
+						"description": "Book an appointment at the first available slot"
+					}
+				},
+				{
+					"name": "Book Same Slot Again (Should Fail - Double Booking)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 409 (Conflict)\", function () {",
+									"    pm.response.to.have.status(409);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"",
+									"pm.test(\"Error indicates booking conflict\", function () {",
+									"    pm.expect(jsonData.error.toLowerCase()).to.include(\"conflict\");",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"provider_id\": \"{{provider_id}}\",\n    \"start_time\": \"{{booked_start_time}}\",\n    \"title\": \"Another Appointment\",\n    \"description\": \"This should fail - double booking attempt\",\n    \"participants\": [\n        {\n            \"external_user_id\": \"another-user\",\n            \"role\": \"guest\"\n        }\n    ]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/appointments/book",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "appointments", "book"]
+						},
+						"description": "Attempt to book the same time slot - should fail with 409 Conflict"
+					}
+				},
+				{
+					"name": "Verify Slot No Longer Available",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"var bookedStartTime = pm.collectionVariables.get(\"booked_start_time\");",
+									"",
+									"pm.test(\"Booked slot is not in available slots\", function () {",
+									"    var slots = jsonData.data.slots;",
+									"    var bookedSlotFound = slots.some(function(slot) {",
+									"        return slot.start_time === bookedStartTime;",
+									"    });",
+									"    pm.expect(bookedSlotFound).to.be.false;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/v1/availability?provider_id={{provider_id}}&date={{next_monday}}",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "availability"],
+							"query": [
+								{
+									"key": "provider_id",
+									"value": "{{provider_id}}"
+								},
+								{
+									"key": "date",
+									"value": "{{next_monday}}"
+								}
+							]
+						},
+						"description": "Verify the booked slot is no longer shown as available"
+					}
+				},
+				{
+					"name": "Book Invalid Slot Time (Not Aligned)",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"// Create an unaligned time (e.g., 9:07 instead of 9:00 or 9:45)",
+									"var nextMonday = pm.collectionVariables.get(\"next_monday\");",
+									"var invalidTime = nextMonday + \"T09:07:00Z\";",
+									"pm.collectionVariables.set(\"invalid_slot_time\", invalidTime);"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 400\", function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"",
+									"pm.test(\"Error indicates invalid slot time\", function () {",
+									"    pm.expect(jsonData.error.toLowerCase()).to.satisfy(function(err) {",
+									"        return err.includes(\"invalid\") || err.includes(\"slot\") || err.includes(\"align\");",
+									"    });",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"provider_id\": \"{{provider_id}}\",\n    \"start_time\": \"{{invalid_slot_time}}\",\n    \"title\": \"Invalid Time Appointment\",\n    \"participants\": [\n        {\n            \"external_user_id\": \"{{user_id}}\",\n            \"role\": \"guest\"\n        }\n    ]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/appointments/book",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "appointments", "book"]
+						},
+						"description": "Attempt to book at a time not aligned with slot intervals - should fail"
+					}
+				},
+				{
+					"name": "Book Outside Availability Window",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"// Create a time outside the 9-17 availability window (e.g., 8:00 AM)",
+									"var nextMonday = pm.collectionVariables.get(\"next_monday\");",
+									"var outsideTime = nextMonday + \"T08:00:00Z\";",
+									"pm.collectionVariables.set(\"outside_window_time\", outsideTime);"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 400\", function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"",
+									"pm.test(\"Error indicates slot not available\", function () {",
+									"    pm.expect(jsonData.error.toLowerCase()).to.satisfy(function(err) {",
+									"        return err.includes(\"not available\") || err.includes(\"outside\");",
+									"    });",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"provider_id\": \"{{provider_id}}\",\n    \"start_time\": \"{{outside_window_time}}\",\n    \"title\": \"Before Hours Appointment\",\n    \"participants\": [\n        {\n            \"external_user_id\": \"{{user_id}}\",\n            \"role\": \"guest\"\n        }\n    ]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/appointments/book",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "appointments", "book"]
+						},
+						"description": "Attempt to book before the availability window starts - should fail"
+					}
+				}
+			],
+			"description": "Test appointment booking, double-booking prevention, and slot validation"
+		},
+		{
+			"name": "4. Buffer Time Verification",
+			"item": [
+				{
+					"name": "Get Slots After Booking (Check Buffer)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"var bookedStartTime = new Date(pm.collectionVariables.get(\"booked_start_time\"));",
+									"",
+									"// The booked appointment was 45 mins with 5 min buffers",
+									"// So the blocked range is: start_time - 5min to end_time + 5min",
+									"// Any slot whose effective time (slot_time +/- buffer) overlaps this range should be blocked",
+									"",
+									"pm.test(\"Overlapping slots are blocked\", function () {",
+									"    var slots = jsonData.data.slots;",
+									"    var bookedEnd = new Date(bookedStartTime.getTime() + 45 * 60000); // 45 min appointment",
+									"    var blockedStart = new Date(bookedStartTime.getTime() - 5 * 60000); // buffer before",
+									"    var blockedEnd = new Date(bookedEnd.getTime() + 5 * 60000); // buffer after",
+									"    ",
+									"    slots.forEach(function(slot) {",
+									"        var slotStart = new Date(slot.start_time);",
+									"        var slotEnd = new Date(slot.end_time);",
+									"        // Slot effective range includes its own buffers",
+									"        var slotEffectiveStart = new Date(slotStart.getTime() - 5 * 60000);",
+									"        var slotEffectiveEnd = new Date(slotEnd.getTime() + 5 * 60000);",
+									"        ",
+									"        // Check no overlap with blocked range",
+									"        var overlaps = slotEffectiveStart < blockedEnd && slotEffectiveEnd > blockedStart;",
+									"        pm.expect(overlaps).to.be.false;",
+									"    });",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/v1/availability?provider_id={{provider_id}}&date={{next_monday}}",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "availability"],
+							"query": [
+								{
+									"key": "provider_id",
+									"value": "{{provider_id}}"
+								},
+								{
+									"key": "date",
+									"value": "{{next_monday}}"
+								}
+							]
+						},
+						"description": "Verify that buffer times are respected - slots overlapping with buffer should be blocked"
+					}
+				}
+			],
+			"description": "Verify that buffer times are properly implemented"
+		},
+		{
+			"name": "5. Appointment Cancellation",
+			"item": [
+				{
+					"name": "Cancel Appointment",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"",
+									"pm.test(\"Appointment cancelled\", function () {",
+									"    pm.expect(jsonData.data.status).to.eql(\"cancelled\");",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/v1/appointments/{{appointment_id}}/cancel",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "appointments", "{{appointment_id}}", "cancel"]
+						},
+						"description": "Cancel the previously booked appointment"
+					}
+				},
+				{
+					"name": "Verify Slot Available Again After Cancel",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"var bookedStartTime = pm.collectionVariables.get(\"booked_start_time\");",
+									"",
+									"pm.test(\"Cancelled slot is available again\", function () {",
+									"    var slots = jsonData.data.slots;",
+									"    var slotFound = slots.some(function(slot) {",
+									"        return slot.start_time === bookedStartTime;",
+									"    });",
+									"    pm.expect(slotFound).to.be.true;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/v1/availability?provider_id={{provider_id}}&date={{next_monday}}",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "availability"],
+							"query": [
+								{
+									"key": "provider_id",
+									"value": "{{provider_id}}"
+								},
+								{
+									"key": "date",
+									"value": "{{next_monday}}"
+								}
+							]
+						},
+						"description": "Verify the cancelled appointment's slot is now available again"
+					}
+				}
+			],
+			"description": "Test that cancelling an appointment frees up the slot"
+		},
+		{
+			"name": "6. Cleanup",
+			"item": [
+				{
+					"name": "Delete Availability Rule",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 or 204\", function () {",
+									"    pm.expect(pm.response.code).to.be.oneOf([200, 204]);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/v1/providers/{{provider_id}}/availability/{{rule_id_tuesday}}",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "providers", "{{provider_id}}", "availability", "{{rule_id_tuesday}}"]
+						},
+						"description": "Delete the Tuesday availability rule"
+					}
+				}
+			],
+			"description": "Cleanup test data"
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8080",
+			"type": "string"
+		},
+		{
+			"key": "provider_id",
+			"value": "dr-smith-001",
+			"type": "string"
+		},
+		{
+			"key": "user_id",
+			"value": "patient-john-doe",
+			"type": "string"
+		},
+		{
+			"key": "jwt_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "product_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "api_key",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "api_secret",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "rule_id_monday",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "rule_id_tuesday",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "appointment_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "today_date",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "next_monday",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "next_sunday",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "slot_start_time",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "slot_end_time",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "booked_start_time",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "invalid_slot_time",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "outside_window_time",
+			"value": "",
+			"type": "string"
+		}
+	]
+}

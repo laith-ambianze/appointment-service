@@ -10,15 +10,17 @@ services:
       - "8081:8081"
     environment:
       - GO_ENV=development
+      - API_PORT=8081
       - DB_HOST=postgres
-      - DB_PORT=1998
+      - DB_PORT=5432
       - DB_USER=appointments
-      - DB_PASSWORD=secure_password
+      - DB_PASSWORD=password123
       - DB_NAME=appointments_dev
       - DB_SSL_MODE=disable
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - LOG_LEVEL=debug
+      - LOG_FORMAT=console
     depends_on:
       postgres:
         condition: service_healthy

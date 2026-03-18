@@ -69,11 +69,11 @@ func (r *appointmentRepository) Create(ctx context.Context, appointment *models.
 	// Insert appointment
 	appointmentQuery := `
 		INSERT INTO appointments (
-			id, product_id, title, description, start_time, end_time,
+			id, product_id, provider_id, title, description, start_time, end_time,
 			timezone, location, status, created_by, metadata,
 			created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
 		)
 	`
 
@@ -84,6 +84,7 @@ func (r *appointmentRepository) Create(ctx context.Context, appointment *models.
 	_, err = tx.Exec(ctx, appointmentQuery,
 		appointment.ID,
 		appointment.ProductID,
+		nullStringPtr(appointment.ProviderID),
 		appointment.Title,
 		appointment.Description,
 		appointment.StartTime,
@@ -164,7 +165,7 @@ func (r *appointmentRepository) Create(ctx context.Context, appointment *models.
 func (r *appointmentRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Appointment, error) {
 	query := `
 		SELECT 
-			id, product_id, title, description, start_time, end_time,
+			id, product_id, provider_id, title, description, start_time, end_time,
 			timezone, location, status, created_by, metadata,
 			created_at, updated_at, deleted_at
 		FROM appointments
@@ -172,12 +173,13 @@ func (r *appointmentRepository) GetByID(ctx context.Context, id uuid.UUID) (*mod
 	`
 
 	var appointment models.Appointment
-	var description, location sql.NullString
+	var providerID, description, location sql.NullString
 	var metadataJSON string
 
 	err := r.db.QueryRow(ctx, query, id).Scan(
 		&appointment.ID,
 		&appointment.ProductID,
+		&providerID,
 		&appointment.Title,
 		&description,
 		&appointment.StartTime,
@@ -200,6 +202,9 @@ func (r *appointmentRepository) GetByID(ctx context.Context, id uuid.UUID) (*mod
 	}
 
 	// Set nullable fields
+	if providerID.Valid {
+		appointment.ProviderID = &providerID.String
+	}
 	appointment.Description = description.String
 	appointment.Location = location.String
 
@@ -227,7 +232,7 @@ func (r *appointmentRepository) GetByID(ctx context.Context, id uuid.UUID) (*mod
 func (r *appointmentRepository) GetByProductAndUser(ctx context.Context, productID uuid.UUID, externalUserID string, filters AppointmentFilters) ([]models.Appointment, error) {
 	query := `
 		SELECT DISTINCT
-			a.id, a.product_id, a.title, a.description, a.start_time, a.end_time,
+			a.id, a.product_id, a.provider_id, a.title, a.description, a.start_time, a.end_time,
 			a.timezone, a.location, a.status, a.created_by, a.metadata,
 			a.created_at, a.updated_at, a.deleted_at
 		FROM appointments a
@@ -323,7 +328,7 @@ func (r *appointmentRepository) GetByProductAndUser(ctx context.Context, product
 func (r *appointmentRepository) GetByDateRange(ctx context.Context, productID uuid.UUID, startTime, endTime time.Time) ([]models.Appointment, error) {
 	query := `
 		SELECT 
-			id, product_id, title, description, start_time, end_time,
+			id, product_id, provider_id, title, description, start_time, end_time,
 			timezone, location, status, created_by, metadata,
 			created_at, updated_at, deleted_at
 		FROM appointments
@@ -627,12 +632,13 @@ func (r *appointmentRepository) GetParticipants(ctx context.Context, appointment
 // Helper function to scan appointment from rows
 func (r *appointmentRepository) scanAppointment(rows pgx.Rows) (*models.Appointment, error) {
 	var appointment models.Appointment
-	var description, location sql.NullString
+	var providerID, description, location sql.NullString
 	var metadataJSON string
 
 	err := rows.Scan(
 		&appointment.ID,
 		&appointment.ProductID,
+		&providerID,
 		&appointment.Title,
 		&description,
 		&appointment.StartTime,
@@ -652,6 +658,9 @@ func (r *appointmentRepository) scanAppointment(rows pgx.Rows) (*models.Appointm
 	}
 
 	// Set nullable fields
+	if providerID.Valid {
+		appointment.ProviderID = &providerID.String
+	}
 	appointment.Description = description.String
 	appointment.Location = location.String
 
@@ -666,4 +675,248 @@ func (r *appointmentRepository) scanAppointment(rows pgx.Rows) (*models.Appointm
 	}
 
 	return &appointment, nil
+}
+
+// nullStringPtr converts a string pointer to sql.NullString
+func nullStringPtr(s *string) sql.NullString {
+	if s == nil || *s == "" {
+		return sql.NullString{Valid: false}
+	}
+	return sql.NullString{String: *s, Valid: true}
+}
+
+// GetByProviderAndDateRange retrieves appointments for a provider within a date range
+// Excludes cancelled and deleted appointments
+func (r *appointmentRepository) GetByProviderAndDateRange(ctx context.Context, productID uuid.UUID, providerID string, startTime, endTime time.Time) ([]models.Appointment, error) {
+	query := `
+		SELECT 
+			id, product_id, provider_id, title, description, start_time, end_time,
+			timezone, location, status, created_by, metadata,
+			created_at, updated_at, deleted_at
+		FROM appointments
+		WHERE product_id = $1
+			AND provider_id = $2
+			AND start_time < $4
+			AND end_time > $3
+			AND status != 'cancelled'
+			AND deleted_at IS NULL
+		ORDER BY start_time ASC
+	`
+
+	rows, err := r.db.Query(ctx, query, productID, providerID, startTime, endTime)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrDatabase, err)
+	}
+	defer rows.Close()
+
+	appointments := []models.Appointment{}
+	for rows.Next() {
+		appointment, err := r.scanAppointment(rows)
+		if err != nil {
+			return nil, err
+		}
+		appointments = append(appointments, *appointment)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrDatabase, err)
+	}
+
+	return appointments, nil
+}
+
+// ErrBookingConflict indicates a booking conflict (double booking)
+var ErrBookingConflict = errors.New("booking conflict: time slot is not available")
+
+// CreateWithLock creates a new appointment with transaction locking for concurrency safety
+// This method uses REPEATABLE READ isolation level and SELECT FOR UPDATE to prevent race conditions
+func (r *appointmentRepository) CreateWithLock(ctx context.Context, appointment *models.Appointment, participants []models.AppointmentParticipant) error {
+	// Validate appointment
+	if err := appointment.Validate(); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+
+	// Provider ID is required for booking
+	if appointment.ProviderID == nil || *appointment.ProviderID == "" {
+		return fmt.Errorf("%w: provider ID is required for booking", ErrInvalidInput)
+	}
+
+	// Validate participants
+	if len(participants) == 0 {
+		return fmt.Errorf("%w: at least one participant is required", ErrInvalidInput)
+	}
+
+	for i := range participants {
+		if err := participants[i].Validate(); err != nil {
+			return fmt.Errorf("%w: participant %d: %v", ErrInvalidInput, i, err)
+		}
+	}
+
+	// Generate ID if not provided
+	if appointment.ID == uuid.Nil {
+		appointment.ID = uuid.New()
+	}
+
+	// Marshal metadata
+	metadataJSON, err := appointment.MetadataJSON()
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+
+	// Start transaction with REPEATABLE READ isolation
+	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{
+		IsoLevel: pgx.RepeatableRead,
+	})
+	if err != nil {
+		return fmt.Errorf("%w: failed to begin transaction: %v", ErrDatabase, err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Lock relevant rows to check for conflicts
+	// This prevents other concurrent transactions from inserting overlapping appointments
+	lockQuery := `
+		SELECT id FROM appointments
+		WHERE product_id = $1
+			AND provider_id = $2
+			AND start_time < $4
+			AND end_time > $3
+			AND status != 'cancelled'
+			AND deleted_at IS NULL
+		FOR UPDATE
+	`
+
+	rows, err := tx.Query(ctx, lockQuery,
+		appointment.ProductID,
+		*appointment.ProviderID,
+		appointment.StartTime,
+		appointment.EndTime,
+	)
+	if err != nil {
+		return fmt.Errorf("%w: failed to lock appointments: %v", ErrDatabase, err)
+	}
+
+	// Check if any conflicting appointments exist
+	hasConflict := false
+	for rows.Next() {
+		hasConflict = true
+		break
+	}
+	rows.Close()
+
+	if hasConflict {
+		r.logger.Warn("Booking conflict detected",
+			zap.String("provider_id", *appointment.ProviderID),
+			zap.Time("start_time", appointment.StartTime),
+			zap.Time("end_time", appointment.EndTime),
+		)
+		return ErrBookingConflict
+	}
+
+	// Insert appointment
+	appointmentQuery := `
+		INSERT INTO appointments (
+			id, product_id, provider_id, title, description, start_time, end_time,
+			timezone, location, status, created_by, metadata,
+			created_at, updated_at
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+		)
+	`
+
+	now := time.Now()
+	appointment.CreatedAt = now
+	appointment.UpdatedAt = now
+
+	_, err = tx.Exec(ctx, appointmentQuery,
+		appointment.ID,
+		appointment.ProductID,
+		*appointment.ProviderID,
+		appointment.Title,
+		appointment.Description,
+		appointment.StartTime,
+		appointment.EndTime,
+		appointment.Timezone,
+		nullString(appointment.Location),
+		appointment.Status,
+		appointment.CreatedBy,
+		metadataJSON,
+		appointment.CreatedAt,
+		appointment.UpdatedAt,
+	)
+
+	if err != nil {
+		// Check if the error is from the exclusion constraint
+		if strings.Contains(err.Error(), "appointments_no_provider_overlap") {
+			r.logger.Warn("Booking conflict detected by exclusion constraint",
+				zap.String("provider_id", *appointment.ProviderID),
+				zap.Time("start_time", appointment.StartTime),
+				zap.Time("end_time", appointment.EndTime),
+			)
+			return ErrBookingConflict
+		}
+		return fmt.Errorf("%w: failed to create appointment: %v", ErrDatabase, err)
+	}
+
+	// Insert participants
+	participantQuery := `
+		INSERT INTO appointment_participants (
+			id, appointment_id, external_user_id, role, status,
+			user_metadata, created_at, updated_at
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8
+		)
+	`
+
+	for i := range participants {
+		participant := &participants[i]
+
+		// Generate ID if not provided
+		if participant.ID == uuid.Nil {
+			participant.ID = uuid.New()
+		}
+
+		participant.AppointmentID = appointment.ID
+		participant.CreatedAt = now
+		participant.UpdatedAt = now
+
+		userMetadataJSON, err := participant.UserMetadataJSON()
+		if err != nil {
+			return fmt.Errorf("%w: failed to marshal participant metadata: %v", ErrInvalidInput, err)
+		}
+
+		_, err = tx.Exec(ctx, participantQuery,
+			participant.ID,
+			participant.AppointmentID,
+			participant.ExternalUserID,
+			participant.Role,
+			participant.Status,
+			userMetadataJSON,
+			participant.CreatedAt,
+			participant.UpdatedAt,
+		)
+
+		if err != nil {
+			return fmt.Errorf("%w: failed to create participant: %v", ErrDatabase, err)
+		}
+	}
+
+	// Commit transaction
+	if err := tx.Commit(ctx); err != nil {
+		// Check for exclusion constraint violation on commit
+		if strings.Contains(err.Error(), "appointments_no_provider_overlap") {
+			return ErrBookingConflict
+		}
+		return fmt.Errorf("%w: failed to commit transaction: %v", ErrDatabase, err)
+	}
+
+	appointment.Participants = participants
+
+	r.logger.Info("Appointment created with lock",
+		zap.String("appointment_id", appointment.ID.String()),
+		zap.String("product_id", appointment.ProductID.String()),
+		zap.String("provider_id", *appointment.ProviderID),
+		zap.Int("participants", len(participants)),
+	)
+
+	return nil
 }

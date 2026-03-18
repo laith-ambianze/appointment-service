@@ -23,6 +23,7 @@ const (
 type Appointment struct {
 	BaseModel
 	ProductID    uuid.UUID                `json:"product_id"`
+	ProviderID   *string                  `json:"provider_id,omitempty"`
 	Title        string                   `json:"title"`
 	Description  string                   `json:"description,omitempty"`
 	StartTime    time.Time                `json:"start_time"`

@@ -14,8 +14,9 @@ import (
 const (
 	// ContextKeyProductID stores the product UUID from JWT
 	ContextKeyProductID = "product_id"
-	// ContextKeyUserID stores the user ID from JWT
-	ContextKeyUserID = "user_id"
+	// ContextKeyExternalUserID stores the external user ID from JWT
+	// This is the user identifier from the integrating product's system
+	ContextKeyExternalUserID = "external_user_id"
 	// ContextKeyRole stores the user role from JWT
 	ContextKeyRole = "role"
 	// ContextKeyClaims stores the full claims object
@@ -78,13 +79,13 @@ func JWTAuth(config JWTAuthConfig) gin.HandlerFunc {
 
 		// Store claims in context for handlers to use
 		c.Set(ContextKeyProductID, claims.ProductID)
-		c.Set(ContextKeyUserID, claims.UserID)
+		c.Set(ContextKeyExternalUserID, claims.ExternalUserID)
 		c.Set(ContextKeyRole, claims.Role)
 		c.Set(ContextKeyClaims, claims)
 
 		// Log successful authentication (only in debug mode)
 		config.Logger.Debug("Request authenticated",
-			zap.String("user_id", claims.UserID),
+			zap.String("external_user_id", claims.ExternalUserID),
 			zap.String("product_id", claims.ProductID.String()),
 			zap.String("role", string(claims.Role)),
 		)
@@ -183,14 +184,14 @@ func GetProductIDFromContext(c *gin.Context) (uuid.UUID, bool) {
 	return productID, ok
 }
 
-// GetUserIDFromContext extracts user_id from Gin context
-func GetUserIDFromContext(c *gin.Context) (string, bool) {
-	val, exists := c.Get(ContextKeyUserID)
+// GetExternalUserIDFromContext extracts external_user_id from Gin context
+func GetExternalUserIDFromContext(c *gin.Context) (string, bool) {
+	val, exists := c.Get(ContextKeyExternalUserID)
 	if !exists {
 		return "", false
 	}
-	userID, ok := val.(string)
-	return userID, ok
+	externalUserID, ok := val.(string)
+	return externalUserID, ok
 }
 
 // GetRoleFromContext extracts role from Gin context
@@ -222,13 +223,13 @@ func MustGetProductID(c *gin.Context) uuid.UUID {
 	return productID
 }
 
-// MustGetUserID extracts user_id or panics (use only when auth middleware is guaranteed)
-func MustGetUserID(c *gin.Context) string {
-	userID, ok := GetUserIDFromContext(c)
+// MustGetExternalUserID extracts external_user_id or panics (use only when auth middleware is guaranteed)
+func MustGetExternalUserID(c *gin.Context) string {
+	externalUserID, ok := GetExternalUserIDFromContext(c)
 	if !ok {
-		panic("user_id not found in context - ensure JWTAuth middleware is applied")
+		panic("external_user_id not found in context - ensure JWTAuth middleware is applied")
 	}
-	return userID
+	return externalUserID
 }
 
 // MustGetRole extracts role or panics (use only when auth middleware is guaranteed)

@@ -38,8 +38,9 @@ func main() {
 	}
 	defer log.Sync()
 
-	log.Info("Starting Appointment Service",
-		zap.String("env", cfg.Env),
+	log.Info("=== Appointment Service Starting ===")
+	log.Info("Configuration",
+		zap.String("environment", cfg.Env),
 		zap.String("port", cfg.APIPort),
 		zap.String("log_level", cfg.LogLevel),
 	)
@@ -62,6 +63,10 @@ func main() {
 		log.Fatal("Failed to connect to database", zap.Error(err))
 	}
 	defer db.Close()
+	log.Info("Database connected",
+		zap.String("host", cfg.DBHost),
+		zap.String("database", cfg.DBName),
+	)
 
 	// Set Gin mode
 	if cfg.IsProduction() {
@@ -82,19 +87,23 @@ func main() {
 	// Initialize repositories
 	appointmentRepo := repository.NewAppointmentRepository(db.Pool, log.Logger)
 	productRepo := repository.NewProductRepository(db.Pool, log.Logger)
+	availabilityRepo := repository.NewAvailabilityRepository(db.Pool, log.Logger)
 
 	// Initialize services
 	appointmentService := service.NewAppointmentService(appointmentRepo, log.Logger)
 	productService := service.NewProductService(productRepo, log.Logger)
+	availabilityService := service.NewAvailabilityService(availabilityRepo, appointmentRepo, log.Logger)
 
 	// Initialize handlers
 	healthHandler := handlers.NewHealthHandler()
 	appointmentHandler := handlers.NewAppointmentHandler(appointmentService, log.Logger)
 	productHandler := handlers.NewProductHandler(productService, log.Logger)
 	authHandler := handlers.NewAuthHandler(productService, jwtManager, log.Logger)
+	availabilityHandler := handlers.NewAvailabilityHandler(availabilityService, log.Logger)
 
 	// Setup routes
-	setupRoutes(router, db, jwtManager, log.Logger, healthHandler, appointmentHandler, productHandler, authHandler)
+	setupRoutes(router, db, jwtManager, log.Logger, healthHandler, appointmentHandler, productHandler, authHandler, availabilityHandler)
+	log.Info("Routes registered successfully")
 
 	// Create HTTP server
 	addr := fmt.Sprintf("%s:%s", cfg.APIHost, cfg.APIPort)
@@ -109,7 +118,7 @@ func main() {
 
 	// Start server in goroutine
 	go func() {
-		log.Info("Server starting", zap.String("address", addr))
+		log.Info("Server listening on " + addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal("Failed to start server", zap.Error(err))
 		}
@@ -120,7 +129,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Info("Shutting down server...")
+	log.Info("=== Shutdown signal received ===")
 
 	// Graceful shutdown with 5 second timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -130,20 +139,21 @@ func main() {
 		log.Fatal("Server forced to shutdown", zap.Error(err))
 	}
 
-	log.Info("Server exited")
+	log.Info("=== Server shutdown complete ===")
 }
 
 // setupRoutes configures all application routes
-func setupRoutes(router *gin.Engine, db *database.PostgresDB, jwtManager *auth.JWTManager, zapLogger *zap.Logger, healthHandler *handlers.HealthHandler, appointmentHandler *handlers.AppointmentHandler, productHandler *handlers.ProductHandler, authHandler *handlers.AuthHandler) {
+func setupRoutes(router *gin.Engine, db *database.PostgresDB, jwtManager *auth.JWTManager, zapLogger *zap.Logger, healthHandler *handlers.HealthHandler, appointmentHandler *handlers.AppointmentHandler, productHandler *handlers.ProductHandler, authHandler *handlers.AuthHandler, availabilityHandler *handlers.AvailabilityHandler) {
 	// Register all routes using the routes package
 	routes.RegisterRoutes(routes.Config{
-		Router:             router,
-		JWTManager:         jwtManager,
-		Logger:             zapLogger,
-		HealthHandler:      healthHandler,
-		AppointmentHandler: appointmentHandler,
-		ProductHandler:     productHandler,
-		AuthHandler:        authHandler,
+		Router:              router,
+		JWTManager:          jwtManager,
+		Logger:              zapLogger,
+		HealthHandler:       healthHandler,
+		AppointmentHandler:  appointmentHandler,
+		ProductHandler:      productHandler,
+		AuthHandler:         authHandler,
+		AvailabilityHandler: availabilityHandler,
 	})
 
 	// Ready endpoint with database health check
@@ -180,6 +190,13 @@ func loggerMiddleware(log *logger.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		path := c.Request.URL.Path
+
+		// Skip logging for health checks and metrics (reduces noise)
+		if path == "/health" || path == "/metrics" || path == "/ready" {
+			c.Next()
+			return
+		}
+
 		raw := c.Request.URL.RawQuery
 
 		// Process request
@@ -196,14 +213,17 @@ func loggerMiddleware(log *logger.Logger) gin.HandlerFunc {
 			path = path + "?" + raw
 		}
 
-		log.Info("HTTP Request",
-			zap.String("method", method),
-			zap.String("path", path),
+		// Format: METHOD /path -> STATUS (latency)
+		fields := []zap.Field{
 			zap.Int("status", statusCode),
 			zap.Duration("latency", latency),
-			zap.String("client_ip", clientIP),
-			zap.String("error", errorMessage),
-		)
+			zap.String("ip", clientIP),
+		}
+		if errorMessage != "" {
+			fields = append(fields, zap.String("error", errorMessage))
+		}
+
+		log.Info(method+" "+path, fields...)
 	}
 }
 

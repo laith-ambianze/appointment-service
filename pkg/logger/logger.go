@@ -2,6 +2,7 @@ package logger
 
 import (
 	"os"
+	"time"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -14,31 +15,76 @@ type Logger struct {
 
 // New creates a new logger instance
 func New(level, format string) (*Logger, error) {
-	var config zap.Config
-
-	// Configure based on format
-	if format == "json" {
-		config = zap.NewProductionConfig()
-	} else {
-		config = zap.NewDevelopmentConfig()
-		config.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
-	}
-
 	// Set log level
 	logLevel, err := parseLevel(level)
 	if err != nil {
 		logLevel = zapcore.InfoLevel
 	}
-	config.Level = zap.NewAtomicLevelAt(logLevel)
 
-	// Build logger
-	zapLogger, err := config.Build(
+	var encoder zapcore.Encoder
+	var config zap.Config
+
+	if format == "json" {
+		// JSON format for production/log aggregation
+		config = zap.NewProductionConfig()
+		config.Level = zap.NewAtomicLevelAt(logLevel)
+		zapLogger, err := config.Build(
+			zap.AddCaller(),
+			zap.AddStacktrace(zapcore.ErrorLevel),
+		)
+		if err != nil {
+			return nil, err
+		}
+		return &Logger{zapLogger}, nil
+	}
+
+	// Console format - human readable for Docker Desktop / local development
+	encoderConfig := zapcore.EncoderConfig{
+		TimeKey:       "time",
+		LevelKey:      "level",
+		NameKey:       "logger",
+		CallerKey:     "caller",
+		FunctionKey:   zapcore.OmitKey,
+		MessageKey:    "msg",
+		StacktraceKey: "stacktrace",
+		LineEnding:    zapcore.DefaultLineEnding,
+		// Human-readable time format
+		EncodeTime: func(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
+			enc.AppendString(t.Format("15:04:05"))
+		},
+		// Clean level format with padding for alignment
+		EncodeLevel: func(l zapcore.Level, enc zapcore.PrimitiveArrayEncoder) {
+			switch l {
+			case zapcore.DebugLevel:
+				enc.AppendString("[DEBUG]")
+			case zapcore.InfoLevel:
+				enc.AppendString("[INFO] ")
+			case zapcore.WarnLevel:
+				enc.AppendString("[WARN] ")
+			case zapcore.ErrorLevel:
+				enc.AppendString("[ERROR]")
+			case zapcore.FatalLevel:
+				enc.AppendString("[FATAL]")
+			default:
+				enc.AppendString("[" + l.CapitalString() + "]")
+			}
+		},
+		EncodeDuration: zapcore.StringDurationEncoder,
+		EncodeCaller:   zapcore.ShortCallerEncoder,
+	}
+
+	encoder = zapcore.NewConsoleEncoder(encoderConfig)
+
+	core := zapcore.NewCore(
+		encoder,
+		zapcore.AddSync(os.Stdout),
+		zap.NewAtomicLevelAt(logLevel),
+	)
+
+	zapLogger := zap.New(core,
 		zap.AddCaller(),
 		zap.AddStacktrace(zapcore.ErrorLevel),
 	)
-	if err != nil {
-		return nil, err
-	}
 
 	return &Logger{zapLogger}, nil
 }

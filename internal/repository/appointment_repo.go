@@ -13,6 +13,10 @@ type AppointmentRepository interface {
 	// Create creates a new appointment with participants
 	Create(ctx context.Context, appointment *models.Appointment, participants []models.AppointmentParticipant) error
 
+	// CreateWithLock creates a new appointment with transaction locking for concurrency safety
+	// Uses REPEATABLE READ isolation level and SELECT FOR UPDATE to prevent race conditions
+	CreateWithLock(ctx context.Context, appointment *models.Appointment, participants []models.AppointmentParticipant) error
+
 	// GetByID retrieves an appointment by ID with participants
 	GetByID(ctx context.Context, id uuid.UUID) (*models.Appointment, error)
 
@@ -21,6 +25,10 @@ type AppointmentRepository interface {
 
 	// GetByDateRange retrieves appointments within a date range
 	GetByDateRange(ctx context.Context, productID uuid.UUID, startTime, endTime time.Time) ([]models.Appointment, error)
+
+	// GetByProviderAndDateRange retrieves appointments for a provider within a date range
+	// Used for availability checking - excludes cancelled appointments
+	GetByProviderAndDateRange(ctx context.Context, productID uuid.UUID, providerID string, startTime, endTime time.Time) ([]models.Appointment, error)
 
 	// Update updates an existing appointment
 	Update(ctx context.Context, appointment *models.Appointment) error

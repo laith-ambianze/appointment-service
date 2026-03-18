@@ -31,13 +31,13 @@ func setupTestRouter(jwtManager *auth.JWTManager, skipPaths []string, allowedRol
 	
 	router.GET("/protected", func(c *gin.Context) {
 		productID, _ := GetProductIDFromContext(c)
-		userID, _ := GetUserIDFromContext(c)
+		externalUserID, _ := GetExternalUserIDFromContext(c)
 		role, _ := GetRoleFromContext(c)
 		
 		c.JSON(http.StatusOK, gin.H{
-			"product_id": productID.String(),
-			"user_id":    userID,
-			"role":       role,
+			"product_id":       productID.String(),
+			"external_user_id": externalUserID,
+			"role":             role,
 		})
 	})
 	
@@ -53,10 +53,10 @@ func TestJWTAuth_ValidToken(t *testing.T) {
 	router := setupTestRouter(jwtManager, nil, nil)
 	
 	productID := uuid.New()
-	userID := "user-123"
+	externalUserID := "user-123"
 	role := auth.RoleUser
 	
-	token, err := jwtManager.GenerateToken(productID, userID, role)
+	token, err := jwtManager.GenerateToken(productID, externalUserID, role)
 	require.NoError(t, err)
 	
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
@@ -72,7 +72,7 @@ func TestJWTAuth_ValidToken(t *testing.T) {
 	require.NoError(t, err)
 	
 	assert.Equal(t, productID.String(), response["product_id"])
-	assert.Equal(t, userID, response["user_id"])
+	assert.Equal(t, externalUserID, response["external_user_id"])
 	assert.Equal(t, string(role), response["role"])
 }
 
@@ -292,7 +292,7 @@ func TestContextHelpers(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
 	
 	productID := uuid.New()
-	userID := "user-456"
+	externalUserID := "user-456"
 	role := auth.RoleProvider
 	
 	router := gin.New()
@@ -307,9 +307,9 @@ func TestContextHelpers(t *testing.T) {
 		assert.True(t, ok)
 		assert.Equal(t, productID, gotProductID)
 		
-		gotUserID, ok := GetUserIDFromContext(c)
+		gotExternalUserID, ok := GetExternalUserIDFromContext(c)
 		assert.True(t, ok)
-		assert.Equal(t, userID, gotUserID)
+		assert.Equal(t, externalUserID, gotExternalUserID)
 		
 		gotRole, ok := GetRoleFromContext(c)
 		assert.True(t, ok)
@@ -321,13 +321,13 @@ func TestContextHelpers(t *testing.T) {
 		
 		// Test Must* functions (should not panic)
 		assert.Equal(t, productID, MustGetProductID(c))
-		assert.Equal(t, userID, MustGetUserID(c))
+		assert.Equal(t, externalUserID, MustGetExternalUserID(c))
 		assert.Equal(t, role, MustGetRole(c))
 		
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 	
-	token, err := jwtManager.GenerateToken(productID, userID, role)
+	token, err := jwtManager.GenerateToken(productID, externalUserID, role)
 	require.NoError(t, err)
 	
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
