@@ -41,8 +41,10 @@ func DefaultCORSConfig() CORSConfig {
 			"Content-Length",
 			"Accept",
 			"Accept-Encoding",
-			"Authorization",
 			"X-API-Key",
+			"X-API-Secret",
+			"X-External-User-ID",
+			"X-Role",
 			"X-Request-ID",
 		},
 		ExposedHeaders: []string{

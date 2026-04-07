@@ -4,19 +4,17 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/laith-ambianze/appointment-service/internal/handlers"
 	"github.com/laith-ambianze/appointment-service/internal/middleware"
-	"github.com/laith-ambianze/appointment-service/pkg/auth"
 	"go.uber.org/zap"
 )
 
 // Config holds dependencies for route registration
 type Config struct {
 	Router              *gin.Engine
-	JWTManager          *auth.JWTManager
+	ProductValidator    middleware.ProductCredentialsValidator // For API key authentication
 	Logger              *zap.Logger
 	HealthHandler       *handlers.HealthHandler
 	AppointmentHandler  *handlers.AppointmentHandler
 	ProductHandler      *handlers.ProductHandler      // Optional: can be nil if not needed
-	AuthHandler         *handlers.AuthHandler         // Optional: can be nil if not needed
 	AvailabilityHandler *handlers.AvailabilityHandler // Optional: can be nil if not needed
 }
 
@@ -26,7 +24,7 @@ func RegisterRoutes(cfg Config) {
 	cfg.Router.GET("/health", cfg.HealthHandler.Health)
 	cfg.Router.GET("/live", cfg.HealthHandler.Live)
 
-	// Public product endpoints (no JWT required)
+	// Public product endpoints (no auth required)
 	if cfg.ProductHandler != nil {
 		// Product registration - public endpoint
 		cfg.Router.POST("/v1/products/register", cfg.ProductHandler.Register)
@@ -34,15 +32,10 @@ func RegisterRoutes(cfg Config) {
 		cfg.Router.POST("/v1/products/validate", cfg.ProductHandler.ValidateCredentials)
 	}
 
-	// Public auth endpoint (no JWT required - uses API key/secret instead)
-	if cfg.AuthHandler != nil {
-		cfg.Router.POST("/v1/auth/token", cfg.AuthHandler.GenerateToken)
-	}
-
-	// JWT Auth middleware config
-	authConfig := middleware.JWTAuthConfig{
-		JWTManager: cfg.JWTManager,
-		Logger:     cfg.Logger,
+	// API Key Auth middleware config
+	authConfig := middleware.APIKeyAuthConfig{
+		ProductValidator: cfg.ProductValidator,
+		Logger:           cfg.Logger,
 		SkipPaths: []string{
 			"/health",
 			"/live",
@@ -50,13 +43,12 @@ func RegisterRoutes(cfg Config) {
 			"/v1/docs/*",
 			"/v1/products/register",
 			"/v1/products/validate",
-			"/v1/auth/token",
 		},
 	}
 
-	// API v1 routes - all require JWT authentication
+	// API v1 routes - all require API Key authentication
 	v1 := cfg.Router.Group("/v1")
-	v1.Use(middleware.JWTAuth(authConfig))
+	v1.Use(middleware.APIKeyAuth(authConfig))
 	{
 		// Appointments - Any authenticated user can access
 		appointments := v1.Group("/appointments")

@@ -118,9 +118,7 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("DB_PASSWORD must be changed in production")
 	}
 
-	if c.JWTSecret == "change-me-in-production" && c.Env == "production" {
-		return fmt.Errorf("JWT_SECRET must be changed in production")
-	}
+	// Note: JWT_SECRET validation removed - authentication now uses API Key/Secret per request
 
 	return nil
 }

@@ -16,7 +16,6 @@ import (
 	"github.com/laith-ambianze/appointment-service/internal/repository"
 	"github.com/laith-ambianze/appointment-service/internal/routes"
 	"github.com/laith-ambianze/appointment-service/internal/service"
-	"github.com/laith-ambianze/appointment-service/pkg/auth"
 	"github.com/laith-ambianze/appointment-service/pkg/database"
 	"github.com/laith-ambianze/appointment-service/pkg/logger"
 	"go.uber.org/zap"
@@ -81,9 +80,6 @@ func main() {
 	router.Use(middleware.CORSFromConfig(cfg.CORSAllowedOrigins, cfg.CORSAllowedMethods, cfg.CORSAllowedHeaders))
 	router.Use(loggerMiddleware(log))
 
-	// Initialize JWT manager
-	jwtManager := auth.NewJWTManager(cfg.JWTSecret)
-
 	// Initialize repositories
 	appointmentRepo := repository.NewAppointmentRepository(db.Pool, log.Logger)
 	productRepo := repository.NewProductRepository(db.Pool, log.Logger)
@@ -98,11 +94,10 @@ func main() {
 	healthHandler := handlers.NewHealthHandler()
 	appointmentHandler := handlers.NewAppointmentHandler(appointmentService, log.Logger)
 	productHandler := handlers.NewProductHandler(productService, log.Logger)
-	authHandler := handlers.NewAuthHandler(productService, jwtManager, log.Logger)
 	availabilityHandler := handlers.NewAvailabilityHandler(availabilityService, log.Logger)
 
-	// Setup routes
-	setupRoutes(router, db, jwtManager, log.Logger, healthHandler, appointmentHandler, productHandler, authHandler, availabilityHandler)
+	// Setup routes (using API Key authentication)
+	setupRoutes(router, db, productService, log.Logger, healthHandler, appointmentHandler, productHandler, availabilityHandler)
 	log.Info("Routes registered successfully")
 
 	// Create HTTP server
@@ -143,16 +138,15 @@ func main() {
 }
 
 // setupRoutes configures all application routes
-func setupRoutes(router *gin.Engine, db *database.PostgresDB, jwtManager *auth.JWTManager, zapLogger *zap.Logger, healthHandler *handlers.HealthHandler, appointmentHandler *handlers.AppointmentHandler, productHandler *handlers.ProductHandler, authHandler *handlers.AuthHandler, availabilityHandler *handlers.AvailabilityHandler) {
+func setupRoutes(router *gin.Engine, db *database.PostgresDB, productService *service.ProductService, zapLogger *zap.Logger, healthHandler *handlers.HealthHandler, appointmentHandler *handlers.AppointmentHandler, productHandler *handlers.ProductHandler, availabilityHandler *handlers.AvailabilityHandler) {
 	// Register all routes using the routes package
 	routes.RegisterRoutes(routes.Config{
 		Router:              router,
-		JWTManager:          jwtManager,
+		ProductValidator:    productService, // ProductService implements ProductCredentialsValidator
 		Logger:              zapLogger,
 		HealthHandler:       healthHandler,
 		AppointmentHandler:  appointmentHandler,
 		ProductHandler:      productHandler,
-		AuthHandler:         authHandler,
 		AvailabilityHandler: availabilityHandler,
 	})
 

@@ -6,14 +6,14 @@
 
 **Core Problem Solved:** Appointment scheduling is a repetitive concern across many domains. This service provides a centralized, API-first scheduling backend that any product can embed, eliminating the need to build and maintain appointment systems individually.
 
-**Key Differentiator:** The service **does not own users**—it relies entirely on external user identifiers (`external_user_id`) passed via JWT claims. This stateless design allows seamless integration without user data synchronization.
+**Key Differentiator:** The service **does not own users**—it relies entirely on external user identifiers (`external_user_id`) passed via request headers. This stateless design allows seamless integration without user data synchronization.
 
 ---
 
 ## 2. Key Features
 
 - **Multi-Tenant Architecture** — Complete data isolation via `product_id`; each integrating product has isolated appointments, participants, and availability rules
-- **JWT-Based Authentication** — Stateless tokens containing `product_id`, `external_user_id`, and `role` claims
+- **API Key Authentication** — Per-request authentication using `X-API-Key`, `X-API-Secret`, `X-External-User-ID`, and `X-Role` headers
 - **Flexible Participant Model** — Support for 1-on-1 and group appointments with configurable participant roles (host, guest, attendee, observer)
 - **Provider Availability Management** — Define working hours, appointment durations, slot intervals, and buffers per provider per day
 - **Dynamic Slot Generation** — Calculate available booking slots based on provider rules and existing appointments
@@ -32,7 +32,7 @@
 | Layer | Location | Responsibility |
 | ------- | ---------- | ---------------- |
 | **HTTP Handlers** | `internal/handlers/` | Request parsing, response formatting, error mapping |
-| **Middleware** | `internal/middleware/` | JWT validation, CORS, role-based authorization |
+| **Middleware** | `internal/middleware/` | API key validation, CORS, role-based authorization |
 | **Service** | `internal/service/` | Business logic, validation, authorization rules |
 | **Repository** | `internal/repository/` | Data access via raw SQL (pgx v5) |
 | **Models** | `internal/models/` | Domain entities and validation |
@@ -44,7 +44,7 @@
 - **HTTP Framework:** Gin
 - **Database:** PostgreSQL 15+ with pgx v5 (raw SQL, no ORM)
 - **Logging:** Zap (structured logging)
-- **Authentication:** JWT (HS256) via `golang-jwt/jwt/v5`
+- **Authentication:** API Key/Secret per request with bcrypt validation
 - **Password Hashing:** bcrypt
 - **Containerization:** Docker, Docker Compose
 - **Monitoring:** Prometheus-ready
@@ -61,9 +61,8 @@
 | GET | `/live` | Kubernetes liveness probe |
 | GET | `/ready` | Readiness probe with DB health |
 | POST | `/v1/products/register` | Register a new product (returns API credentials) |
-| POST | `/v1/auth/token` | Generate JWT using API key/secret |
 
-### Appointments (JWT Required)
+### Appointments (API Key Auth Required)
 
 | Method | Endpoint | Description |
 | -------- | ---------- | ------------- |
@@ -78,7 +77,7 @@
 | DELETE | `/v1/appointments/:id/participants/:user_id` | Remove participant |
 | PATCH | `/v1/appointments/:id/participants/:user_id/status` | Update participant RSVP |
 
-### Availability (JWT Required)
+### Availability (API Key Auth Required)
 
 | Method | Endpoint | Description |
 | -------- | ---------- | ------------- |
@@ -90,7 +89,7 @@
 | PATCH | `/v1/providers/:provider_id/availability/:rule_id` | Update rule |
 | DELETE | `/v1/providers/:provider_id/availability/:rule_id` | Delete rule |
 
-### Products (JWT Required)
+### Products (API Key Auth Required)
 
 | Method | Endpoint | Description |
 | -------- | ---------- | ------------- |
@@ -143,10 +142,11 @@ Authorization is enforced via middleware (`RequireAdmin()`, `RequireProvider()`,
 
 ### Security
 
-- **API Credentials:** Products authenticate via `api_key`/`api_secret`; secrets are bcrypt-hashed and never stored in plaintext
-- **JWT Tokens:** 24-hour expiration; signed with HS256
+- **API Key Authentication:** Every request includes `X-API-Key`, `X-API-Secret`, `X-External-User-ID`, and `X-Role` headers
+- **Credential Validation:** API secrets are bcrypt-hashed and validated on every request
 - **Multi-Tenancy:** All queries filter by `product_id` to ensure data isolation
 - **CORS:** Configurable allowed origins, methods, and headers
+- **HTTPS Required:** API secret is sent per-request, so TLS is mandatory in production
 
 ### Error Handling
 

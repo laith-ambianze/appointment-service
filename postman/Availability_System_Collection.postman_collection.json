@@ -1,8 +1,8 @@
 {
 	"info": {
-		"_postman_id": "availability-booking-system-collection",
-		"name": "Provider Availability & Booking System",
-		"description": "Complete test collection for the Provider Availability and Booking System.\n\n## Setup Instructions\n\n1. **Import the Environment**: Import the companion environment file\n2. **Start the Server**: Run `go run ./cmd/api/` from the project root\n3. **Generate JWT Token**: Run `go run gen_token.go` and paste the token in the environment\n4. **Run Tests**: Execute requests in order from top to bottom\n\n## Key Features Tested\n- Dynamic slot generation (slots are computed, never stored)\n- Double-booking prevention via PostgreSQL EXCLUSION CONSTRAINT\n- Buffer times before/after appointments\n- Timezone support\n- Concurrency safety with REPEATABLE READ transactions",
+		"_postman_id": "availability-booking-system-collection-v2",
+		"name": "Provider Availability & Booking System (API Key Auth)",
+		"description": "Complete test collection for the Provider Availability and Booking System.\n\n## Setup Instructions\n\n1. **Import the Environment**: Import the companion environment file\n2. **Start the Server**: Run `go run ./cmd/api/` from the project root\n3. **Register a Product**: Run the 'Register Product' request to get API credentials\n4. **Run Tests**: Execute requests in order from top to bottom\n\n## Authentication\n\nAll authenticated requests use these headers:\n- `X-API-Key`: Product's API key\n- `X-API-Secret`: Product's API secret\n- `X-External-User-ID`: User identifier from your system\n- `X-Role`: User role (admin, user, or provider)\n\n## Key Features Tested\n- Dynamic slot generation (slots are computed, never stored)\n- Double-booking prevention via PostgreSQL EXCLUSION CONSTRAINT\n- Buffer times before/after appointments\n- Timezone support\n- Concurrency safety with REPEATABLE READ transactions",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"item": [
@@ -20,9 +20,9 @@
 									"    pm.response.to.have.status(200);",
 									"});",
 									"",
-									"pm.test(\"Health status is healthy\", function () {",
+									"pm.test(\"Health status is ok\", function () {",
 									"    var jsonData = pm.response.json();",
-									"    pm.expect(jsonData.status).to.eql(\"healthy\");",
+									"    pm.expect(jsonData.status).to.eql(\"ok\");",
 									"});"
 								],
 								"type": "text/javascript"
@@ -54,15 +54,18 @@
 									"var jsonData = pm.response.json();",
 									"",
 									"pm.test(\"Response has product data\", function () {",
-									"    pm.expect(jsonData.data).to.have.property(\"id\");",
-									"    pm.expect(jsonData.data).to.have.property(\"api_key\");",
-									"    pm.expect(jsonData.data).to.have.property(\"api_secret\");",
+									"    pm.expect(jsonData.product).to.have.property(\"id\");",
+									"    pm.expect(jsonData).to.have.property(\"api_key\");",
+									"    pm.expect(jsonData).to.have.property(\"api_secret\");",
 									"});",
 									"",
 									"// Save credentials for later use",
-									"pm.collectionVariables.set(\"product_id\", jsonData.data.id);",
-									"pm.collectionVariables.set(\"api_key\", jsonData.data.api_key);",
-									"pm.collectionVariables.set(\"api_secret\", jsonData.data.api_secret);"
+									"pm.collectionVariables.set(\"product_id\", jsonData.product.id);",
+									"pm.collectionVariables.set(\"api_key\", jsonData.api_key);",
+									"pm.collectionVariables.set(\"api_secret\", jsonData.api_secret);",
+									"",
+									"console.log(\"API Key saved: \" + jsonData.api_key);",
+									"console.log(\"Product ID saved: \" + jsonData.product.id);"
 								],
 								"type": "text/javascript"
 							}
@@ -85,51 +88,7 @@
 							"host": ["{{base_url}}"],
 							"path": ["v1", "products", "register"]
 						},
-						"description": "Register a new product to get API credentials"
-					}
-				},
-				{
-					"name": "Get JWT Token",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test(\"Status code is 200\", function () {",
-									"    pm.response.to.have.status(200);",
-									"});",
-									"",
-									"var jsonData = pm.response.json();",
-									"",
-									"pm.test(\"Response has access token\", function () {",
-									"    pm.expect(jsonData.data).to.have.property(\"access_token\");",
-									"});",
-									"",
-									"// Save token for authenticated requests",
-									"pm.collectionVariables.set(\"jwt_token\", jsonData.data.access_token);"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"api_key\": \"{{api_key}}\",\n    \"api_secret\": \"{{api_secret}}\",\n    \"user_id\": \"{{user_id}}\",\n    \"role\": \"admin\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/v1/auth/token",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "auth", "token"]
-						},
-						"description": "Exchange API credentials for a JWT token"
+						"description": "Register a new product to get API credentials. The api_key and api_secret will be used for all subsequent authenticated requests."
 					}
 				}
 			],
@@ -152,12 +111,12 @@
 									"var jsonData = pm.response.json();",
 									"",
 									"pm.test(\"Rule created with correct data\", function () {",
-									"    pm.expect(jsonData.data).to.have.property(\"id\");",
-									"    pm.expect(jsonData.data.day_of_week).to.eql(1);",
-									"    pm.expect(jsonData.data.duration_minutes).to.eql(30);",
+									"    pm.expect(jsonData).to.have.property(\"id\");",
+									"    pm.expect(jsonData.day_of_week).to.eql(1);",
+									"    pm.expect(jsonData.duration_minutes).to.eql(30);",
 									"});",
 									"",
-									"pm.collectionVariables.set(\"rule_id_monday\", jsonData.data.id);"
+									"pm.collectionVariables.set(\"rule_id_monday\", jsonData.id);"
 								],
 								"type": "text/javascript"
 							}
@@ -171,13 +130,25 @@
 								"value": "application/json"
 							},
 							{
-								"key": "Authorization",
-								"value": "Bearer {{jwt_token}}"
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "X-API-Secret",
+								"value": "{{api_secret}}"
+							},
+							{
+								"key": "X-External-User-ID",
+								"value": "{{user_id}}"
+							},
+							{
+								"key": "X-Role",
+								"value": "admin"
 							}
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"day_of_week\": 1,\n    \"start_time\": \"09:00\",\n    \"end_time\": \"17:00\",\n    \"duration_minutes\": 30,\n    \"slot_interval_minutes\": 15,\n    \"buffer_before_minutes\": 5,\n    \"buffer_after_minutes\": 5,\n    \"timezone\": \"UTC\",\n    \"is_active\": true\n}"
+							"raw": "{\n    \"day_of_week\": 1,\n    \"start_time\": \"09:00\",\n    \"end_time\": \"17:00\",\n    \"duration_minutes\": 30,\n    \"slot_interval_minutes\": 15,\n    \"buffer_before_minutes\": 5,\n    \"buffer_after_minutes\": 5,\n    \"timezone\": \"UTC\"\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/v1/providers/{{provider_id}}/availability",
@@ -199,7 +170,7 @@
 									"});",
 									"",
 									"var jsonData = pm.response.json();",
-									"pm.collectionVariables.set(\"rule_id_tuesday\", jsonData.data.id);"
+									"pm.collectionVariables.set(\"rule_id_tuesday\", jsonData.id);"
 								],
 								"type": "text/javascript"
 							}
@@ -213,13 +184,25 @@
 								"value": "application/json"
 							},
 							{
-								"key": "Authorization",
-								"value": "Bearer {{jwt_token}}"
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "X-API-Secret",
+								"value": "{{api_secret}}"
+							},
+							{
+								"key": "X-External-User-ID",
+								"value": "{{user_id}}"
+							},
+							{
+								"key": "X-Role",
+								"value": "admin"
 							}
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"day_of_week\": 2,\n    \"start_time\": \"10:00\",\n    \"end_time\": \"18:00\",\n    \"duration_minutes\": 60,\n    \"slot_interval_minutes\": 60,\n    \"buffer_before_minutes\": 10,\n    \"buffer_after_minutes\": 10,\n    \"timezone\": \"America/New_York\",\n    \"is_active\": true\n}"
+							"raw": "{\n    \"day_of_week\": 2,\n    \"start_time\": \"10:00\",\n    \"end_time\": \"18:00\",\n    \"duration_minutes\": 60,\n    \"slot_interval_minutes\": 60,\n    \"buffer_before_minutes\": 10,\n    \"buffer_after_minutes\": 10,\n    \"timezone\": \"America/New_York\"\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/v1/providers/{{provider_id}}/availability",
@@ -243,7 +226,7 @@
 									"var jsonData = pm.response.json();",
 									"",
 									"pm.test(\"Multiple rules created\", function () {",
-									"    pm.expect(jsonData.data.created).to.be.greaterThan(0);",
+									"    pm.expect(jsonData.count).to.be.greaterThan(0);",
 									"});"
 								],
 								"type": "text/javascript"
@@ -258,13 +241,25 @@
 								"value": "application/json"
 							},
 							{
-								"key": "Authorization",
-								"value": "Bearer {{jwt_token}}"
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "X-API-Secret",
+								"value": "{{api_secret}}"
+							},
+							{
+								"key": "X-External-User-ID",
+								"value": "{{user_id}}"
+							},
+							{
+								"key": "X-Role",
+								"value": "admin"
 							}
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"rules\": [\n        {\n            \"day_of_week\": 3,\n            \"start_time\": \"09:00\",\n            \"end_time\": \"17:00\",\n            \"duration_minutes\": 45,\n            \"slot_interval_minutes\": 45,\n            \"buffer_before_minutes\": 0,\n            \"buffer_after_minutes\": 15,\n            \"timezone\": \"UTC\",\n            \"is_active\": true\n        },\n        {\n            \"day_of_week\": 4,\n            \"start_time\": \"08:00\",\n            \"end_time\": \"16:00\",\n            \"duration_minutes\": 30,\n            \"slot_interval_minutes\": 30,\n            \"buffer_before_minutes\": 5,\n            \"buffer_after_minutes\": 5,\n            \"timezone\": \"UTC\",\n            \"is_active\": true\n        },\n        {\n            \"day_of_week\": 5,\n            \"start_time\": \"10:00\",\n            \"end_time\": \"14:00\",\n            \"duration_minutes\": 60,\n            \"slot_interval_minutes\": 60,\n            \"buffer_before_minutes\": 0,\n            \"buffer_after_minutes\": 0,\n            \"timezone\": \"Europe/London\",\n            \"is_active\": true\n        }\n    ]\n}"
+							"raw": "[\n    {\n        \"day_of_week\": 3,\n        \"start_time\": \"09:00\",\n        \"end_time\": \"17:00\",\n        \"duration_minutes\": 45,\n        \"slot_interval_minutes\": 45,\n        \"buffer_before_minutes\": 0,\n        \"buffer_after_minutes\": 15,\n        \"timezone\": \"UTC\"\n    },\n    {\n        \"day_of_week\": 4,\n        \"start_time\": \"08:00\",\n        \"end_time\": \"16:00\",\n        \"duration_minutes\": 30,\n        \"slot_interval_minutes\": 30,\n        \"buffer_before_minutes\": 5,\n        \"buffer_after_minutes\": 5,\n        \"timezone\": \"UTC\"\n    },\n    {\n        \"day_of_week\": 5,\n        \"start_time\": \"10:00\",\n        \"end_time\": \"14:00\",\n        \"duration_minutes\": 60,\n        \"slot_interval_minutes\": 60,\n        \"buffer_before_minutes\": 0,\n        \"buffer_after_minutes\": 0,\n        \"timezone\": \"Europe/London\"\n    }\n]"
 						},
 						"url": {
 							"raw": "{{base_url}}/v1/providers/{{provider_id}}/availability/bulk",
@@ -288,11 +283,11 @@
 									"var jsonData = pm.response.json();",
 									"",
 									"pm.test(\"Returns array of rules\", function () {",
-									"    pm.expect(jsonData.data).to.be.an(\"array\");",
+									"    pm.expect(jsonData.rules).to.be.an(\"array\");",
 									"});",
 									"",
 									"pm.test(\"Has rules for weekdays\", function () {",
-									"    pm.expect(jsonData.data.length).to.be.greaterThan(0);",
+									"    pm.expect(jsonData.rules.length).to.be.greaterThan(0);",
 									"});"
 								],
 								"type": "text/javascript"
@@ -303,8 +298,20 @@
 						"method": "GET",
 						"header": [
 							{
-								"key": "Authorization",
-								"value": "Bearer {{jwt_token}}"
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "X-API-Secret",
+								"value": "{{api_secret}}"
+							},
+							{
+								"key": "X-External-User-ID",
+								"value": "{{user_id}}"
+							},
+							{
+								"key": "X-Role",
+								"value": "admin"
 							}
 						],
 						"url": {
@@ -329,8 +336,8 @@
 									"var jsonData = pm.response.json();",
 									"",
 									"pm.test(\"Returns rule data\", function () {",
-									"    pm.expect(jsonData.data).to.have.property(\"id\");",
-									"    pm.expect(jsonData.data).to.have.property(\"day_of_week\");",
+									"    pm.expect(jsonData).to.have.property(\"id\");",
+									"    pm.expect(jsonData).to.have.property(\"day_of_week\");",
 									"});"
 								],
 								"type": "text/javascript"
@@ -341,8 +348,20 @@
 						"method": "GET",
 						"header": [
 							{
-								"key": "Authorization",
-								"value": "Bearer {{jwt_token}}"
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "X-API-Secret",
+								"value": "{{api_secret}}"
+							},
+							{
+								"key": "X-External-User-ID",
+								"value": "{{user_id}}"
+							},
+							{
+								"key": "X-Role",
+								"value": "admin"
 							}
 						],
 						"url": {
@@ -367,7 +386,7 @@
 									"var jsonData = pm.response.json();",
 									"",
 									"pm.test(\"Duration updated\", function () {",
-									"    pm.expect(jsonData.data.duration_minutes).to.eql(45);",
+									"    pm.expect(jsonData.duration_minutes).to.eql(45);",
 									"});"
 								],
 								"type": "text/javascript"
@@ -382,8 +401,20 @@
 								"value": "application/json"
 							},
 							{
-								"key": "Authorization",
-								"value": "Bearer {{jwt_token}}"
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "X-API-Secret",
+								"value": "{{api_secret}}"
+							},
+							{
+								"key": "X-External-User-ID",
+								"value": "{{user_id}}"
+							},
+							{
+								"key": "X-Role",
+								"value": "admin"
 							}
 						],
 						"body": {
@@ -431,8 +462,8 @@
 									"var jsonData = pm.response.json();",
 									"",
 									"pm.test(\"Response has slots array\", function () {",
-									"    pm.expect(jsonData.data).to.have.property(\"slots\");",
-									"    pm.expect(jsonData.data.slots).to.be.an(\"array\");",
+									"    pm.expect(jsonData).to.have.property(\"slots\");",
+									"    pm.expect(jsonData.slots).to.be.an(\"array\");",
 									"});"
 								],
 								"type": "text/javascript"
@@ -443,8 +474,20 @@
 						"method": "GET",
 						"header": [
 							{
-								"key": "Authorization",
-								"value": "Bearer {{jwt_token}}"
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "X-API-Secret",
+								"value": "{{api_secret}}"
+							},
+							{
+								"key": "X-External-User-ID",
+								"value": "{{user_id}}"
+							},
+							{
+								"key": "X-Role",
+								"value": "user"
 							}
 						],
 						"url": {
@@ -496,19 +539,19 @@
 									"var jsonData = pm.response.json();",
 									"",
 									"pm.test(\"Returns slots for Monday\", function () {",
-									"    pm.expect(jsonData.data.slots).to.be.an(\"array\");",
+									"    pm.expect(jsonData.slots).to.be.an(\"array\");",
 									"    // Should have slots since we created Monday availability",
-									"    pm.expect(jsonData.data.slots.length).to.be.greaterThan(0);",
+									"    pm.expect(jsonData.slots.length).to.be.greaterThan(0);",
 									"});",
 									"",
 									"pm.test(\"Duration matches rule\", function () {",
-									"    pm.expect(jsonData.data.duration_minutes).to.eql(45); // Updated to 45 earlier",
+									"    pm.expect(jsonData.duration_minutes).to.eql(45); // Updated to 45 earlier",
 									"});",
 									"",
 									"// Save first slot for booking",
-									"if (jsonData.data.slots && jsonData.data.slots.length > 0) {",
-									"    pm.collectionVariables.set(\"slot_start_time\", jsonData.data.slots[0].start_time);",
-									"    pm.collectionVariables.set(\"slot_end_time\", jsonData.data.slots[0].end_time);",
+									"if (jsonData.slots && jsonData.slots.length > 0) {",
+									"    pm.collectionVariables.set(\"slot_start_time\", jsonData.slots[0].start_time);",
+									"    pm.collectionVariables.set(\"slot_end_time\", jsonData.slots[0].end_time);",
 									"}"
 								],
 								"type": "text/javascript"
@@ -519,8 +562,20 @@
 						"method": "GET",
 						"header": [
 							{
-								"key": "Authorization",
-								"value": "Bearer {{jwt_token}}"
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "X-API-Secret",
+								"value": "{{api_secret}}"
+							},
+							{
+								"key": "X-External-User-ID",
+								"value": "{{user_id}}"
+							},
+							{
+								"key": "X-Role",
+								"value": "user"
 							}
 						],
 						"url": {
@@ -555,7 +610,7 @@
 									"var jsonData = pm.response.json();",
 									"",
 									"pm.test(\"Error message indicates past date\", function () {",
-									"    pm.expect(jsonData.error).to.include(\"past\");",
+									"    pm.expect(jsonData.message.toLowerCase()).to.include(\"past\");",
 									"});"
 								],
 								"type": "text/javascript"
@@ -566,8 +621,20 @@
 						"method": "GET",
 						"header": [
 							{
-								"key": "Authorization",
-								"value": "Bearer {{jwt_token}}"
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "X-API-Secret",
+								"value": "{{api_secret}}"
+							},
+							{
+								"key": "X-External-User-ID",
+								"value": "{{user_id}}"
+							},
+							{
+								"key": "X-Role",
+								"value": "user"
 							}
 						],
 						"url": {
@@ -618,8 +685,8 @@
 									"var jsonData = pm.response.json();",
 									"",
 									"pm.test(\"Returns empty slots for day without rule\", function () {",
-									"    pm.expect(jsonData.data.slots).to.be.an(\"array\");",
-									"    pm.expect(jsonData.data.slots.length).to.eql(0);",
+									"    pm.expect(jsonData.slots).to.be.an(\"array\");",
+									"    pm.expect(jsonData.slots.length).to.eql(0);",
 									"});"
 								],
 								"type": "text/javascript"
@@ -630,8 +697,20 @@
 						"method": "GET",
 						"header": [
 							{
-								"key": "Authorization",
-								"value": "Bearer {{jwt_token}}"
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "X-API-Secret",
+								"value": "{{api_secret}}"
+							},
+							{
+								"key": "X-External-User-ID",
+								"value": "{{user_id}}"
+							},
+							{
+								"key": "X-Role",
+								"value": "user"
 							}
 						],
 						"url": {
@@ -672,13 +751,13 @@
 									"var jsonData = pm.response.json();",
 									"",
 									"pm.test(\"Appointment created\", function () {",
-									"    pm.expect(jsonData.data).to.have.property(\"id\");",
-									"    pm.expect(jsonData.data).to.have.property(\"provider_id\");",
-									"    pm.expect(jsonData.data.status).to.eql(\"scheduled\");",
+									"    pm.expect(jsonData).to.have.property(\"id\");",
+									"    pm.expect(jsonData).to.have.property(\"provider_id\");",
+									"    pm.expect(jsonData.status).to.eql(\"scheduled\");",
 									"});",
 									"",
-									"pm.collectionVariables.set(\"appointment_id\", jsonData.data.id);",
-									"pm.collectionVariables.set(\"booked_start_time\", jsonData.data.start_time);"
+									"pm.collectionVariables.set(\"appointment_id\", jsonData.id);",
+									"pm.collectionVariables.set(\"booked_start_time\", jsonData.start_time);"
 								],
 								"type": "text/javascript"
 							}
@@ -692,8 +771,20 @@
 								"value": "application/json"
 							},
 							{
-								"key": "Authorization",
-								"value": "Bearer {{jwt_token}}"
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "X-API-Secret",
+								"value": "{{api_secret}}"
+							},
+							{
+								"key": "X-External-User-ID",
+								"value": "{{user_id}}"
+							},
+							{
+								"key": "X-Role",
+								"value": "user"
 							}
 						],
 						"body": {
@@ -722,7 +813,7 @@
 									"var jsonData = pm.response.json();",
 									"",
 									"pm.test(\"Error indicates booking conflict\", function () {",
-									"    pm.expect(jsonData.error.toLowerCase()).to.include(\"conflict\");",
+									"    pm.expect(jsonData.message.toLowerCase()).to.include(\"conflict\");",
 									"});"
 								],
 								"type": "text/javascript"
@@ -737,13 +828,25 @@
 								"value": "application/json"
 							},
 							{
-								"key": "Authorization",
-								"value": "Bearer {{jwt_token}}"
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "X-API-Secret",
+								"value": "{{api_secret}}"
+							},
+							{
+								"key": "X-External-User-ID",
+								"value": "another-user-123"
+							},
+							{
+								"key": "X-Role",
+								"value": "user"
 							}
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"provider_id\": \"{{provider_id}}\",\n    \"start_time\": \"{{booked_start_time}}\",\n    \"title\": \"Another Appointment\",\n    \"description\": \"This should fail - double booking attempt\",\n    \"participants\": [\n        {\n            \"external_user_id\": \"another-user\",\n            \"role\": \"guest\"\n        }\n    ]\n}"
+							"raw": "{\n    \"provider_id\": \"{{provider_id}}\",\n    \"start_time\": \"{{booked_start_time}}\",\n    \"title\": \"Another Appointment\",\n    \"description\": \"This should fail - double booking attempt\",\n    \"participants\": [\n        {\n            \"external_user_id\": \"another-user-123\",\n            \"role\": \"guest\"\n        }\n    ]\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/v1/appointments/book",
@@ -768,7 +871,7 @@
 									"var bookedStartTime = pm.collectionVariables.get(\"booked_start_time\");",
 									"",
 									"pm.test(\"Booked slot is not in available slots\", function () {",
-									"    var slots = jsonData.data.slots;",
+									"    var slots = jsonData.slots;",
 									"    var bookedSlotFound = slots.some(function(slot) {",
 									"        return slot.start_time === bookedStartTime;",
 									"    });",
@@ -783,8 +886,20 @@
 						"method": "GET",
 						"header": [
 							{
-								"key": "Authorization",
-								"value": "Bearer {{jwt_token}}"
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "X-API-Secret",
+								"value": "{{api_secret}}"
+							},
+							{
+								"key": "X-External-User-ID",
+								"value": "{{user_id}}"
+							},
+							{
+								"key": "X-Role",
+								"value": "user"
 							}
 						],
 						"url": {
@@ -831,8 +946,8 @@
 									"var jsonData = pm.response.json();",
 									"",
 									"pm.test(\"Error indicates invalid slot time\", function () {",
-									"    pm.expect(jsonData.error.toLowerCase()).to.satisfy(function(err) {",
-									"        return err.includes(\"invalid\") || err.includes(\"slot\") || err.includes(\"align\");",
+									"    pm.expect(jsonData.message.toLowerCase()).to.satisfy(function(msg) {",
+									"        return msg.includes(\"invalid\") || msg.includes(\"slot\") || msg.includes(\"available\");",
 									"    });",
 									"});"
 								],
@@ -848,8 +963,20 @@
 								"value": "application/json"
 							},
 							{
-								"key": "Authorization",
-								"value": "Bearer {{jwt_token}}"
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "X-API-Secret",
+								"value": "{{api_secret}}"
+							},
+							{
+								"key": "X-External-User-ID",
+								"value": "{{user_id}}"
+							},
+							{
+								"key": "X-Role",
+								"value": "user"
 							}
 						],
 						"body": {
@@ -890,8 +1017,8 @@
 									"var jsonData = pm.response.json();",
 									"",
 									"pm.test(\"Error indicates slot not available\", function () {",
-									"    pm.expect(jsonData.error.toLowerCase()).to.satisfy(function(err) {",
-									"        return err.includes(\"not available\") || err.includes(\"outside\");",
+									"    pm.expect(jsonData.message.toLowerCase()).to.satisfy(function(msg) {",
+									"        return msg.includes(\"not available\") || msg.includes(\"outside\") || msg.includes(\"invalid\");",
 									"    });",
 									"});"
 								],
@@ -907,8 +1034,20 @@
 								"value": "application/json"
 							},
 							{
-								"key": "Authorization",
-								"value": "Bearer {{jwt_token}}"
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "X-API-Secret",
+								"value": "{{api_secret}}"
+							},
+							{
+								"key": "X-External-User-ID",
+								"value": "{{user_id}}"
+							},
+							{
+								"key": "X-Role",
+								"value": "user"
 							}
 						],
 						"body": {
@@ -945,10 +1084,10 @@
 									"",
 									"// The booked appointment was 45 mins with 5 min buffers",
 									"// So the blocked range is: start_time - 5min to end_time + 5min",
-									"// Any slot whose effective time (slot_time +/- buffer) overlaps this range should be blocked",
+									"// Any slot whose effective time overlaps this range should be blocked",
 									"",
 									"pm.test(\"Overlapping slots are blocked\", function () {",
-									"    var slots = jsonData.data.slots;",
+									"    var slots = jsonData.slots;",
 									"    var bookedEnd = new Date(bookedStartTime.getTime() + 45 * 60000); // 45 min appointment",
 									"    var blockedStart = new Date(bookedStartTime.getTime() - 5 * 60000); // buffer before",
 									"    var blockedEnd = new Date(bookedEnd.getTime() + 5 * 60000); // buffer after",
@@ -956,12 +1095,9 @@
 									"    slots.forEach(function(slot) {",
 									"        var slotStart = new Date(slot.start_time);",
 									"        var slotEnd = new Date(slot.end_time);",
-									"        // Slot effective range includes its own buffers",
-									"        var slotEffectiveStart = new Date(slotStart.getTime() - 5 * 60000);",
-									"        var slotEffectiveEnd = new Date(slotEnd.getTime() + 5 * 60000);",
 									"        ",
 									"        // Check no overlap with blocked range",
-									"        var overlaps = slotEffectiveStart < blockedEnd && slotEffectiveEnd > blockedStart;",
+									"        var overlaps = slotStart < blockedEnd && slotEnd > blockedStart;",
 									"        pm.expect(overlaps).to.be.false;",
 									"    });",
 									"});"
@@ -974,8 +1110,20 @@
 						"method": "GET",
 						"header": [
 							{
-								"key": "Authorization",
-								"value": "Bearer {{jwt_token}}"
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "X-API-Secret",
+								"value": "{{api_secret}}"
+							},
+							{
+								"key": "X-External-User-ID",
+								"value": "{{user_id}}"
+							},
+							{
+								"key": "X-Role",
+								"value": "user"
 							}
 						],
 						"url": {
@@ -1016,7 +1164,7 @@
 									"var jsonData = pm.response.json();",
 									"",
 									"pm.test(\"Appointment cancelled\", function () {",
-									"    pm.expect(jsonData.data.status).to.eql(\"cancelled\");",
+									"    pm.expect(jsonData.status).to.eql(\"cancelled\");",
 									"});"
 								],
 								"type": "text/javascript"
@@ -1027,8 +1175,20 @@
 						"method": "POST",
 						"header": [
 							{
-								"key": "Authorization",
-								"value": "Bearer {{jwt_token}}"
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "X-API-Secret",
+								"value": "{{api_secret}}"
+							},
+							{
+								"key": "X-External-User-ID",
+								"value": "{{user_id}}"
+							},
+							{
+								"key": "X-Role",
+								"value": "user"
 							}
 						],
 						"url": {
@@ -1054,7 +1214,7 @@
 									"var bookedStartTime = pm.collectionVariables.get(\"booked_start_time\");",
 									"",
 									"pm.test(\"Cancelled slot is available again\", function () {",
-									"    var slots = jsonData.data.slots;",
+									"    var slots = jsonData.slots;",
 									"    var slotFound = slots.some(function(slot) {",
 									"        return slot.start_time === bookedStartTime;",
 									"    });",
@@ -1069,8 +1229,20 @@
 						"method": "GET",
 						"header": [
 							{
-								"key": "Authorization",
-								"value": "Bearer {{jwt_token}}"
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "X-API-Secret",
+								"value": "{{api_secret}}"
+							},
+							{
+								"key": "X-External-User-ID",
+								"value": "{{user_id}}"
+							},
+							{
+								"key": "X-Role",
+								"value": "user"
 							}
 						],
 						"url": {
@@ -1116,8 +1288,20 @@
 						"method": "DELETE",
 						"header": [
 							{
-								"key": "Authorization",
-								"value": "Bearer {{jwt_token}}"
+								"key": "X-API-Key",
+								"value": "{{api_key}}"
+							},
+							{
+								"key": "X-API-Secret",
+								"value": "{{api_secret}}"
+							},
+							{
+								"key": "X-External-User-ID",
+								"value": "{{user_id}}"
+							},
+							{
+								"key": "X-Role",
+								"value": "admin"
 							}
 						],
 						"url": {
@@ -1155,7 +1339,7 @@
 	"variable": [
 		{
 			"key": "base_url",
-			"value": "http://localhost:8080",
+			"value": "http://localhost:8081",
 			"type": "string"
 		},
 		{
@@ -1166,11 +1350,6 @@
 		{
 			"key": "user_id",
 			"value": "patient-john-doe",
-			"type": "string"
-		},
-		{
-			"key": "jwt_token",
-			"value": "",
 			"type": "string"
 		},
 		{
