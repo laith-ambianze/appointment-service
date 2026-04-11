@@ -34,7 +34,7 @@ var ErrAvailabilityRuleNotFound = errors.New("availability rule not found")
 // ErrDuplicateAvailabilityRule indicates a duplicate availability rule
 var ErrDuplicateAvailabilityRule = errors.New("availability rule already exists for this provider and day")
 
-// Create creates a new availability rule
+// Create creates a new availability rule and any associated breaks in a single transaction
 func (r *availabilityRepository) Create(ctx context.Context, rule *models.AvailabilityRule) error {
 	// Validate rule
 	if err := rule.Validate(); err != nil {
@@ -45,6 +45,16 @@ func (r *availabilityRepository) Create(ctx context.Context, rule *models.Availa
 	if rule.ID == uuid.Nil {
 		rule.ID = uuid.New()
 	}
+
+	now := time.Now()
+	rule.CreatedAt = now
+	rule.UpdatedAt = now
+
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("%w: failed to begin transaction: %v", ErrDatabase, err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	query := `
 		INSERT INTO provider_availability_rules (
@@ -57,11 +67,7 @@ func (r *availabilityRepository) Create(ctx context.Context, rule *models.Availa
 		)
 	`
 
-	now := time.Now()
-	rule.CreatedAt = now
-	rule.UpdatedAt = now
-
-	_, err := r.db.Exec(ctx, query,
+	_, err = tx.Exec(ctx, query,
 		rule.ID,
 		rule.ProductID,
 		rule.ProviderID,
@@ -79,11 +85,20 @@ func (r *availabilityRepository) Create(ctx context.Context, rule *models.Availa
 	)
 
 	if err != nil {
-		// Check for unique constraint violation
 		if isUniqueViolation(err) {
 			return ErrDuplicateAvailabilityRule
 		}
 		return fmt.Errorf("%w: failed to create availability rule: %v", ErrDatabase, err)
+	}
+
+	if len(rule.Breaks) > 0 {
+		if err := r.insertBreaksTx(ctx, tx, rule.ID, rule.Breaks); err != nil {
+			return err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("%w: failed to commit transaction: %v", ErrDatabase, err)
 	}
 
 	r.logger.Info("Availability rule created",
@@ -115,6 +130,12 @@ func (r *availabilityRepository) GetByID(ctx context.Context, id uuid.UUID) (*mo
 		return nil, err
 	}
 
+	breaks, err := r.loadBreaksForRule(ctx, rule.ID)
+	if err != nil {
+		return nil, err
+	}
+	rule.Breaks = breaks
+
 	return rule, nil
 }
 
@@ -141,6 +162,12 @@ func (r *availabilityRepository) GetByProviderAndDay(ctx context.Context, produc
 		}
 		return nil, err
 	}
+
+	breaks, err := r.loadBreaksForRule(ctx, rule.ID)
+	if err != nil {
+		return nil, err
+	}
+	rule.Breaks = breaks
 
 	return rule, nil
 }
@@ -179,15 +206,51 @@ func (r *availabilityRepository) ListByProvider(ctx context.Context, productID u
 		return nil, fmt.Errorf("%w: %v", ErrDatabase, err)
 	}
 
+	if len(rules) == 0 {
+		return rules, nil
+	}
+
+	// Batch-load breaks for all rules in a single query (avoids N+1)
+	ruleIDs := make([]uuid.UUID, len(rules))
+	for i, rule := range rules {
+		ruleIDs[i] = rule.ID
+	}
+
+	allBreaks, err := r.loadBreaksForRules(ctx, ruleIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Associate breaks with their rules
+	breaksByRuleID := make(map[uuid.UUID][]models.AvailabilityBreak, len(allBreaks))
+	for _, b := range allBreaks {
+		breaksByRuleID[b.RuleID] = append(breaksByRuleID[b.RuleID], b)
+	}
+	for i := range rules {
+		if breaks, ok := breaksByRuleID[rules[i].ID]; ok {
+			rules[i].Breaks = breaks
+		} else {
+			rules[i].Breaks = []models.AvailabilityBreak{}
+		}
+	}
+
 	return rules, nil
 }
 
-// Update updates an existing availability rule
+// Update updates an existing availability rule and replaces its breaks in a single transaction
 func (r *availabilityRepository) Update(ctx context.Context, rule *models.AvailabilityRule) error {
 	// Validate rule
 	if err := rule.Validate(); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
+
+	rule.UpdatedAt = time.Now()
+
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("%w: failed to begin transaction: %v", ErrDatabase, err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	query := `
 		UPDATE provider_availability_rules SET
@@ -203,9 +266,7 @@ func (r *availabilityRepository) Update(ctx context.Context, rule *models.Availa
 		WHERE id = $10 AND deleted_at IS NULL
 	`
 
-	rule.UpdatedAt = time.Now()
-
-	result, err := r.db.Exec(ctx, query,
+	result, err := tx.Exec(ctx, query,
 		rule.StartTime.String(),
 		rule.EndTime.String(),
 		rule.DurationMinutes,
@@ -224,6 +285,22 @@ func (r *availabilityRepository) Update(ctx context.Context, rule *models.Availa
 
 	if result.RowsAffected() == 0 {
 		return ErrAvailabilityRuleNotFound
+	}
+
+	// Replace breaks: delete existing, then insert new set
+	_, err = tx.Exec(ctx, `DELETE FROM availability_breaks WHERE rule_id = $1`, rule.ID)
+	if err != nil {
+		return fmt.Errorf("%w: failed to delete existing breaks: %v", ErrDatabase, err)
+	}
+
+	if len(rule.Breaks) > 0 {
+		if err := r.insertBreaksTx(ctx, tx, rule.ID, rule.Breaks); err != nil {
+			return err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("%w: failed to commit transaction: %v", ErrDatabase, err)
 	}
 
 	r.logger.Info("Availability rule updated",
@@ -374,6 +451,95 @@ func (r *availabilityRepository) scanRuleFromRows(rows pgx.Rows) (*models.Availa
 	rule.EndTime = endTime
 
 	return &rule, nil
+}
+
+// insertBreaksTx bulk-inserts availability breaks within an existing transaction.
+// Each inserted break has its ID and CreatedAt populated.
+func (r *availabilityRepository) insertBreaksTx(ctx context.Context, tx pgx.Tx, ruleID uuid.UUID, breaks []models.AvailabilityBreak) error {
+	for i := range breaks {
+		b := &breaks[i]
+		b.ID = uuid.New()
+		b.RuleID = ruleID
+		b.CreatedAt = time.Now()
+
+		_, err := tx.Exec(ctx,
+			`INSERT INTO availability_breaks (id, rule_id, start_time, end_time, created_at)
+			 VALUES ($1, $2, $3, $4, $5)`,
+			b.ID,
+			b.RuleID,
+			b.StartTime.String(),
+			b.EndTime.String(),
+			b.CreatedAt,
+		)
+		if err != nil {
+			return fmt.Errorf("%w: failed to insert break: %v", ErrDatabase, err)
+		}
+	}
+	return nil
+}
+
+// loadBreaksForRule loads all breaks for a single rule.
+func (r *availabilityRepository) loadBreaksForRule(ctx context.Context, ruleID uuid.UUID) ([]models.AvailabilityBreak, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT id, rule_id, start_time, end_time, created_at
+		 FROM availability_breaks
+		 WHERE rule_id = $1
+		 ORDER BY start_time ASC`,
+		ruleID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrDatabase, err)
+	}
+	defer rows.Close()
+
+	return r.scanBreakRows(rows)
+}
+
+// loadBreaksForRules batch-loads breaks for multiple rules in a single query.
+func (r *availabilityRepository) loadBreaksForRules(ctx context.Context, ruleIDs []uuid.UUID) ([]models.AvailabilityBreak, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT id, rule_id, start_time, end_time, created_at
+		 FROM availability_breaks
+		 WHERE rule_id = ANY($1)
+		 ORDER BY rule_id, start_time ASC`,
+		ruleIDs,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrDatabase, err)
+	}
+	defer rows.Close()
+
+	return r.scanBreakRows(rows)
+}
+
+// scanBreakRows scans all rows into a slice of AvailabilityBreak.
+func (r *availabilityRepository) scanBreakRows(rows pgx.Rows) ([]models.AvailabilityBreak, error) {
+	var breaks []models.AvailabilityBreak
+	for rows.Next() {
+		var b models.AvailabilityBreak
+		var startStr, endStr string
+
+		if err := rows.Scan(&b.ID, &b.RuleID, &startStr, &endStr, &b.CreatedAt); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrDatabase, err)
+		}
+
+		st, err := models.ParseLocalTime(startStr)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid break start_time: %v", ErrDatabase, err)
+		}
+		et, err := models.ParseLocalTime(endStr)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid break end_time: %v", ErrDatabase, err)
+		}
+
+		b.StartTime = st
+		b.EndTime = et
+		breaks = append(breaks, b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrDatabase, err)
+	}
+	return breaks, nil
 }
 
 // isUniqueViolation checks if the error is a unique constraint violation

@@ -36,7 +36,7 @@ func (m *mockAvailabilityRepo) GetByID(ctx context.Context, id uuid.UUID) (*mode
 			return rule, nil
 		}
 	}
-	return nil, ErrAvailabilityRuleNotFound
+	return nil, repository.ErrAvailabilityRuleNotFound
 }
 
 func (m *mockAvailabilityRepo) GetByProviderAndDay(ctx context.Context, productID uuid.UUID, providerID string, dayOfWeek models.DayOfWeek) (*models.AvailabilityRule, error) {
@@ -44,7 +44,7 @@ func (m *mockAvailabilityRepo) GetByProviderAndDay(ctx context.Context, productI
 	if rule, ok := m.rules[key]; ok && rule.ProductID == productID && rule.IsActive {
 		return rule, nil
 	}
-	return nil, ErrAvailabilityRuleNotFound
+	return nil, repository.ErrAvailabilityRuleNotFound
 }
 
 func (m *mockAvailabilityRepo) ListByProvider(ctx context.Context, productID uuid.UUID, providerID string) ([]models.AvailabilityRule, error) {
@@ -70,7 +70,7 @@ func (m *mockAvailabilityRepo) Delete(ctx context.Context, id uuid.UUID) error {
 			return nil
 		}
 	}
-	return ErrAvailabilityRuleNotFound
+	return repository.ErrAvailabilityRuleNotFound
 }
 
 func (m *mockAvailabilityRepo) DeleteByProviderAndDay(ctx context.Context, productID uuid.UUID, providerID string, dayOfWeek models.DayOfWeek) error {
@@ -79,7 +79,7 @@ func (m *mockAvailabilityRepo) DeleteByProviderAndDay(ctx context.Context, produ
 		delete(m.rules, key)
 		return nil
 	}
-	return ErrAvailabilityRuleNotFound
+	return repository.ErrAvailabilityRuleNotFound
 }
 
 // mockAppointmentRepoForAvailability is a mock implementation for appointment queries used by availability tests
@@ -686,4 +686,216 @@ func TestSortSlotsByStartTime(t *testing.T) {
 	assert.Equal(t, 9, slots[0].StartTime.Hour())
 	assert.Equal(t, 11, slots[1].StartTime.Hour())
 	assert.Equal(t, 14, slots[2].StartTime.Hour())
+}
+
+// --- Break overlap / filterBreakSlots tests ---
+
+func TestFilterBreakSlots(t *testing.T) {
+	svc, _, _ := newAvailabilityTestService()
+
+	// Base date: some future Monday used to anchor slot times
+	date := time.Date(2030, 1, 7, 0, 0, 0, 0, time.UTC) // Monday
+	loc := time.UTC
+
+	makeSlot := func(startHour, startMin, endHour, endMin int) models.TimeSlot {
+		return models.TimeSlot{
+			StartTime: time.Date(date.Year(), date.Month(), date.Day(), startHour, startMin, 0, 0, loc),
+			EndTime:   time.Date(date.Year(), date.Month(), date.Day(), endHour, endMin, 0, 0, loc),
+			Duration:  30,
+		}
+	}
+
+	breakWindow := []models.AvailabilityBreak{
+		{
+			StartTime: models.NewLocalTime(11, 0),
+			EndTime:   models.NewLocalTime(12, 0),
+		},
+	}
+
+	tests := []struct {
+		name     string
+		slot     models.TimeSlot
+		wantKeep bool
+	}{
+		{
+			name:     "slot entirely before break",
+			slot:     makeSlot(9, 0, 9, 30),
+			wantKeep: true,
+		},
+		{
+			name:     "slot entirely after break",
+			slot:     makeSlot(12, 0, 12, 30),
+			wantKeep: true,
+		},
+		{
+			name:     "slot fully inside break",
+			slot:     makeSlot(11, 15, 11, 45),
+			wantKeep: false,
+		},
+		{
+			name:     "slot partially overlapping break start",
+			slot:     makeSlot(10, 30, 11, 30),
+			wantKeep: false,
+		},
+		{
+			name:     "slot partially overlapping break end",
+			slot:     makeSlot(11, 30, 12, 30),
+			wantKeep: false,
+		},
+		{
+			name:     "slot spanning entire break",
+			slot:     makeSlot(10, 0, 13, 0),
+			wantKeep: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := svc.filterBreakSlots([]models.TimeSlot{tt.slot}, breakWindow, date, loc)
+			if tt.wantKeep {
+				assert.Len(t, result, 1, "slot should be kept")
+			} else {
+				assert.Len(t, result, 0, "slot should be filtered out")
+			}
+		})
+	}
+
+	t.Run("no breaks returns all slots", func(t *testing.T) {
+		slots := []models.TimeSlot{makeSlot(9, 0, 9, 30), makeSlot(11, 0, 11, 30)}
+		result := svc.filterBreakSlots(slots, nil, date, loc)
+		assert.Len(t, result, 2)
+	})
+}
+
+func TestSlotGenerationWithBreak(t *testing.T) {
+	svc, availRepo, _ := newAvailabilityTestService()
+	productID := uuid.New()
+	providerID := "provider-breaks"
+
+	// Rule: 09:00-17:00, 30 min duration, 30 min interval, break 11:00-12:00
+	rule := &models.AvailabilityRule{
+		ID:                  uuid.New(),
+		ProductID:           productID,
+		ProviderID:          providerID,
+		DayOfWeek:           models.Monday,
+		StartTime:           models.NewLocalTime(9, 0),
+		EndTime:             models.NewLocalTime(17, 0),
+		DurationMinutes:     30,
+		SlotIntervalMinutes: 30,
+		BufferBeforeMinutes: 0,
+		BufferAfterMinutes:  0,
+		Timezone:            "UTC",
+		IsActive:            true,
+		Breaks: []models.AvailabilityBreak{
+			{
+				StartTime: models.NewLocalTime(11, 0),
+				EndTime:   models.NewLocalTime(12, 0),
+			},
+		},
+	}
+	availRepo.rules[providerID+"_"+string(rune(models.Monday))] = rule
+
+	// Find a future Monday
+	date := time.Now().AddDate(0, 0, 1)
+	for date.Weekday() != time.Monday {
+		date = date.AddDate(0, 0, 1)
+	}
+
+	response, err := svc.GetAvailableSlots(context.Background(), productID, GetAvailableSlotsRequest{
+		ProviderID: providerID,
+		Date:       date.Format("2006-01-02"),
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, response)
+
+	// No slot should start or end inside the 11:00-12:00 break
+	breakStart := time.Date(date.Year(), date.Month(), date.Day(), 11, 0, 0, 0, time.UTC)
+	breakEnd := time.Date(date.Year(), date.Month(), date.Day(), 12, 0, 0, 0, time.UTC)
+
+	for _, slot := range response.Slots {
+		overlaps := slot.StartTime.Before(breakEnd) && slot.EndTime.After(breakStart)
+		assert.False(t, overlaps, "slot %v-%v must not overlap break 11:00-12:00", slot.StartTime, slot.EndTime)
+	}
+
+	// Slots at 11:00-11:30, 11:30-12:00 should be absent; 12:00-12:30 should be present
+	has1100 := false
+	has1200 := false
+	for _, slot := range response.Slots {
+		if slot.StartTime.Equal(time.Date(date.Year(), date.Month(), date.Day(), 11, 0, 0, 0, time.UTC)) {
+			has1100 = true
+		}
+		if slot.StartTime.Equal(time.Date(date.Year(), date.Month(), date.Day(), 12, 0, 0, 0, time.UTC)) {
+			has1200 = true
+		}
+	}
+	assert.False(t, has1100, "11:00 slot should not exist during break")
+	assert.True(t, has1200, "12:00 slot should exist after break")
+}
+
+func TestParseAndValidateBreaks(t *testing.T) {
+	ruleStart := models.NewLocalTime(9, 0)
+	ruleEnd := models.NewLocalTime(17, 0)
+
+	tests := []struct {
+		name    string
+		reqs    []BreakRequest
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:    "valid single break",
+			reqs:    []BreakRequest{{StartTime: "11:00", EndTime: "12:00"}},
+			wantErr: false,
+		},
+		{
+			name:    "no breaks is valid",
+			reqs:    nil,
+			wantErr: false,
+		},
+		{
+			name:    "end before start",
+			reqs:    []BreakRequest{{StartTime: "12:00", EndTime: "11:00"}},
+			wantErr: true,
+		},
+		{
+			name:    "break starts before rule start",
+			reqs:    []BreakRequest{{StartTime: "08:00", EndTime: "09:30"}},
+			wantErr: true,
+		},
+		{
+			name:    "break ends after rule end",
+			reqs:    []BreakRequest{{StartTime: "16:30", EndTime: "17:30"}},
+			wantErr: true,
+		},
+		{
+			name: "overlapping breaks",
+			reqs: []BreakRequest{
+				{StartTime: "11:00", EndTime: "12:00"},
+				{StartTime: "11:30", EndTime: "13:00"},
+			},
+			wantErr: true,
+		},
+		{
+			name:    "more than 10 breaks",
+			reqs:    make([]BreakRequest, 11),
+			wantErr: true,
+		},
+		{
+			name:    "invalid start_time format",
+			reqs:    []BreakRequest{{StartTime: "bad", EndTime: "12:00"}},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := parseAndValidateBreaks(tt.reqs, ruleStart, ruleEnd)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }

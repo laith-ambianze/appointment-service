@@ -45,29 +45,37 @@ func NewAvailabilityService(
 	}
 }
 
+// BreakRequest represents a break period within an availability rule
+type BreakRequest struct {
+	StartTime string `json:"start_time" binding:"required"`
+	EndTime   string `json:"end_time" binding:"required"`
+}
+
 // CreateAvailabilityRuleRequest contains data for creating an availability rule
 type CreateAvailabilityRuleRequest struct {
-	ProviderID          string `json:"provider_id" binding:"required,max=255"`
-	DayOfWeek           int    `json:"day_of_week" binding:"min=0,max=6"`
-	StartTime           string `json:"start_time" binding:"required"`
-	EndTime             string `json:"end_time" binding:"required"`
-	DurationMinutes     int    `json:"duration_minutes" binding:"required,min=1,max=480"`
-	SlotIntervalMinutes int    `json:"slot_interval_minutes" binding:"required,min=1"`
-	BufferBeforeMinutes int    `json:"buffer_before_minutes" binding:"min=0,max=120"`
-	BufferAfterMinutes  int    `json:"buffer_after_minutes" binding:"min=0,max=120"`
-	Timezone            string `json:"timezone"`
+	ProviderID          string         `json:"provider_id" binding:"required,max=255"`
+	DayOfWeek           int            `json:"day_of_week" binding:"min=0,max=6"`
+	StartTime           string         `json:"start_time" binding:"required"`
+	EndTime             string         `json:"end_time" binding:"required"`
+	DurationMinutes     int            `json:"duration_minutes" binding:"required,min=1,max=480"`
+	SlotIntervalMinutes int            `json:"slot_interval_minutes" binding:"required,min=1"`
+	BufferBeforeMinutes int            `json:"buffer_before_minutes" binding:"min=0,max=120"`
+	BufferAfterMinutes  int            `json:"buffer_after_minutes" binding:"min=0,max=120"`
+	Timezone            string         `json:"timezone"`
+	Breaks              []BreakRequest `json:"breaks"`
 }
 
 // UpdateAvailabilityRuleRequest contains data for updating an availability rule
 type UpdateAvailabilityRuleRequest struct {
-	StartTime           *string `json:"start_time"`
-	EndTime             *string `json:"end_time"`
-	DurationMinutes     *int    `json:"duration_minutes" binding:"omitempty,min=1,max=480"`
-	SlotIntervalMinutes *int    `json:"slot_interval_minutes" binding:"omitempty,min=1"`
-	BufferBeforeMinutes *int    `json:"buffer_before_minutes" binding:"omitempty,min=0,max=120"`
-	BufferAfterMinutes  *int    `json:"buffer_after_minutes" binding:"omitempty,min=0,max=120"`
-	Timezone            *string `json:"timezone"`
-	IsActive            *bool   `json:"is_active"`
+	StartTime           *string        `json:"start_time"`
+	EndTime             *string        `json:"end_time"`
+	DurationMinutes     *int           `json:"duration_minutes" binding:"omitempty,min=1,max=480"`
+	SlotIntervalMinutes *int           `json:"slot_interval_minutes" binding:"omitempty,min=1"`
+	BufferBeforeMinutes *int           `json:"buffer_before_minutes" binding:"omitempty,min=0,max=120"`
+	BufferAfterMinutes  *int           `json:"buffer_after_minutes" binding:"omitempty,min=0,max=120"`
+	Timezone            *string        `json:"timezone"`
+	IsActive            *bool          `json:"is_active"`
+	Breaks              []BreakRequest `json:"breaks"`
 }
 
 // GetAvailableSlotsRequest contains data for getting available slots
@@ -143,6 +151,13 @@ func (s *AvailabilityService) CreateAvailabilityRule(ctx context.Context, produc
 		Timezone:            timezone,
 		IsActive:            true,
 	}
+
+	// Validate and parse breaks
+	breaks, err := parseAndValidateBreaks(req.Breaks, startTime, endTime)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	rule.Breaks = breaks
 
 	// Validate rule
 	if err := rule.Validate(); err != nil {
@@ -242,6 +257,15 @@ func (s *AvailabilityService) UpdateAvailabilityRule(ctx context.Context, produc
 		rule.IsActive = *req.IsActive
 	}
 
+	// Replace breaks when the field is present in the request (nil slice = not provided = keep existing)
+	if req.Breaks != nil {
+		breaks, err := parseAndValidateBreaks(req.Breaks, rule.StartTime, rule.EndTime)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		}
+		rule.Breaks = breaks
+	}
+
 	// Validate updated rule
 	if err := rule.Validate(); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
@@ -331,6 +355,9 @@ func (s *AvailabilityService) GetAvailableSlots(ctx context.Context, productID u
 
 	// Filter out slots that overlap with existing appointments
 	availableSlots := s.filterAvailableSlots(slots, existingAppointments, rule)
+
+	// Filter out slots that fall within break windows
+	availableSlots = s.filterBreakSlots(availableSlots, rule.Breaks, date, loc)
 
 	// Determine response timezone
 	responseTimezone := rule.Timezone
@@ -637,6 +664,85 @@ func (s *AvailabilityService) GetAvailableSlotsForDateRange(ctx context.Context,
 	}
 
 	return result, nil
+}
+
+// filterBreakSlots removes slots that overlap with any break window defined in the rule.
+// A slot [slotStart, slotEnd) overlaps a break [breakStart, breakEnd) when:
+//
+//	slotStart < breakEnd AND slotEnd > breakStart
+func (s *AvailabilityService) filterBreakSlots(slots []models.TimeSlot, breaks []models.AvailabilityBreak, date time.Time, loc *time.Location) []models.TimeSlot {
+	if len(breaks) == 0 {
+		return slots
+	}
+
+	type window struct{ start, end time.Time }
+	breakWindows := make([]window, len(breaks))
+	for i, b := range breaks {
+		breakWindows[i] = window{
+			start: b.StartTime.ToTimeOnDate(date, loc).UTC(),
+			end:   b.EndTime.ToTimeOnDate(date, loc).UTC(),
+		}
+	}
+
+	available := make([]models.TimeSlot, 0, len(slots))
+	for _, slot := range slots {
+		overlaps := false
+		for _, bw := range breakWindows {
+			if slot.StartTime.Before(bw.end) && slot.EndTime.After(bw.start) {
+				overlaps = true
+				break
+			}
+		}
+		if !overlaps {
+			available = append(available, slot)
+		}
+	}
+	return available
+}
+
+// parseAndValidateBreaks parses and validates a slice of BreakRequest against the rule's
+// start and end times. It returns an error if any break is invalid.
+func parseAndValidateBreaks(reqs []BreakRequest, ruleStart, ruleEnd models.LocalTime) ([]models.AvailabilityBreak, error) {
+	if len(reqs) > 10 {
+		return nil, fmt.Errorf("too many breaks: maximum 10 allowed, got %d", len(reqs))
+	}
+
+	breaks := make([]models.AvailabilityBreak, 0, len(reqs))
+	for i, req := range reqs {
+		st, err := models.ParseLocalTime(req.StartTime)
+		if err != nil {
+			return nil, fmt.Errorf("break[%d]: invalid start_time: %v", i, err)
+		}
+		et, err := models.ParseLocalTime(req.EndTime)
+		if err != nil {
+			return nil, fmt.Errorf("break[%d]: invalid end_time: %v", i, err)
+		}
+		if !et.After(st) {
+			return nil, fmt.Errorf("break[%d]: end_time must be after start_time", i)
+		}
+		if st.Before(ruleStart) {
+			return nil, fmt.Errorf("break[%d]: start_time %s is before rule start_time %s", i, st, ruleStart)
+		}
+		if et.After(ruleEnd) {
+			return nil, fmt.Errorf("break[%d]: end_time %s is after rule end_time %s", i, et, ruleEnd)
+		}
+		breaks = append(breaks, models.AvailabilityBreak{
+			StartTime: st,
+			EndTime:   et,
+		})
+	}
+
+	// Check that breaks do not overlap each other
+	for i := 0; i < len(breaks); i++ {
+		for j := i + 1; j < len(breaks); j++ {
+			a, b := breaks[i], breaks[j]
+			if a.StartTime.ToMinutes() < b.EndTime.ToMinutes() && a.EndTime.ToMinutes() > b.StartTime.ToMinutes() {
+				return nil, fmt.Errorf("breaks[%d] and breaks[%d] overlap", i, j)
+			}
+		}
+	}
+
+	return breaks, nil
 }
 
 // SortSlotsByStartTime sorts time slots by start time

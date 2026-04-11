@@ -35,23 +35,33 @@ func (d DayOfWeek) IsValid() bool {
 	return d >= 0 && d <= 6
 }
 
+// AvailabilityBreak represents a break period within an availability rule
+type AvailabilityBreak struct {
+	ID        uuid.UUID `json:"id"`
+	RuleID    uuid.UUID `json:"rule_id"`
+	StartTime LocalTime `json:"start_time"`
+	EndTime   LocalTime `json:"end_time"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // AvailabilityRule represents a provider's availability schedule for a specific day
 type AvailabilityRule struct {
-	ID                  uuid.UUID    `json:"id"`
-	ProductID           uuid.UUID    `json:"product_id"`
-	ProviderID          string       `json:"provider_id"`
-	DayOfWeek           DayOfWeek    `json:"day_of_week"`
-	StartTime           LocalTime    `json:"start_time"`
-	EndTime             LocalTime    `json:"end_time"`
-	DurationMinutes     int          `json:"duration_minutes"`
-	SlotIntervalMinutes int          `json:"slot_interval_minutes"`
-	BufferBeforeMinutes int          `json:"buffer_before_minutes"`
-	BufferAfterMinutes  int          `json:"buffer_after_minutes"`
-	Timezone            string       `json:"timezone"`
-	IsActive            bool         `json:"is_active"`
-	CreatedAt           time.Time    `json:"created_at"`
-	UpdatedAt           time.Time    `json:"updated_at"`
-	DeletedAt           sql.NullTime `json:"deleted_at,omitempty"`
+	ID                  uuid.UUID           `json:"id"`
+	ProductID           uuid.UUID           `json:"product_id"`
+	ProviderID          string              `json:"provider_id"`
+	DayOfWeek           DayOfWeek           `json:"day_of_week"`
+	StartTime           LocalTime           `json:"start_time"`
+	EndTime             LocalTime           `json:"end_time"`
+	DurationMinutes     int                 `json:"duration_minutes"`
+	SlotIntervalMinutes int                 `json:"slot_interval_minutes"`
+	BufferBeforeMinutes int                 `json:"buffer_before_minutes"`
+	BufferAfterMinutes  int                 `json:"buffer_after_minutes"`
+	Timezone            string              `json:"timezone"`
+	IsActive            bool                `json:"is_active"`
+	Breaks              []AvailabilityBreak `json:"breaks"`
+	CreatedAt           time.Time           `json:"created_at"`
+	UpdatedAt           time.Time           `json:"updated_at"`
+	DeletedAt           sql.NullTime        `json:"deleted_at,omitempty"`
 }
 
 // LocalTime represents a time without date (HH:MM:SS)
